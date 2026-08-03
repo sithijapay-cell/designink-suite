@@ -341,8 +341,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
     return { ok: false, error: lastErrorMessage, status: 502 };
 }
 
-// Handler for Groq / Vision Proxy (Supports Callable SDK & standard HTTP POST)
-app.post("/api/groqProxy", async (req, res) => {
+const handleGroqProxy = async (req, res) => {
     const payload = req.body?.data || req.body;
     const { apiKey, model, messages, temperature } = payload || {};
 
@@ -367,7 +366,11 @@ app.post("/api/groqProxy", async (req, res) => {
     }
 
     return res.status(pipelineRes.status || 500).json({ error: pipelineRes.error });
-});
+};
+
+app.post("/api/groqProxy", handleGroqProxy);
+app.post("/groqProxy", handleGroqProxy);
+app.post("/", handleGroqProxy);
 
 // Handler for generateMetadata API
 app.post("/api/generateMetadata", async (req, res) => {

@@ -1570,12 +1570,27 @@
     <!-- PayHere Payment Gateway -->
     <script type="text/javascript" src="https://www.payhere.lk/lib/payhere.js"></script>
 
-    <!-- Firebase Auth -->
-    <script defer src="/__/firebase/10.9.0/firebase-app-compat.js"></script>
-    <script defer src="/__/firebase/10.9.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/10.9.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/10.9.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/init.js"></script>
+    <!-- Firebase SDKs from Google CDN -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-functions-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    <script>
+      if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+        try {
+          firebase.initializeApp({
+            apiKey: "AIzaSyDesignInkPublicWebApiKeyPlaceholder",
+            authDomain: "designink-suite.firebaseapp.com",
+            projectId: "designink-suite",
+            storageBucket: "designink-suite.firebasestorage.app",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef123456"
+          });
+        } catch(e) {
+          console.log("Firebase init fallback:", e.message);
+        }
+      }
+    </script>
 
     <script src="app.js?v=11"></script>
     <script src="particles.js"></script>
