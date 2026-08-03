@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DesignInk — Admin Portal</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/png" href="icon.png">
+    
+    <!-- Google Fonts & Font Awesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="styles.css?v=admin1">
+    <style>
+        body { 
+            background: #080c17; 
+            color: #e2e8f0; 
+            font-family: 'Inter', sans-serif; 
+            margin: 0; padding: 0;
+            display: flex;
+            min-height: 100vh;
+        }
+        .admin-layout {
+            display: flex;
+            width: 100%;
+        }
+        .admin-sidebar {
+            width: 250px;
+            background: rgba(8, 12, 23, 0.95);
+            border-right: 1px solid var(--border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+        .admin-main {
+            flex: 1;
+            padding: 2rem 3rem;
+            max-height: 100vh;
+            overflow-y: auto;
+        }
+        .admin-auth-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(8,12,23,0.95);
+            backdrop-filter: blur(10px);
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .admin-nav-item {
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .admin-nav-item.active, .admin-nav-item:hover {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+        .admin-stat-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            flex: 1;
+        }
+        .admin-stat-card .admin-stat-val {
+            font-size: 2.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            margin-top: 0.5rem;
+            color: #fff;
+        }
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+        .admin-table th, .admin-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .admin-table th { color: var(--text-muted); font-weight: 500; }
+        .admin-table tr:hover { background: rgba(255,255,255,0.02); }
+        
+        .badge {
+            padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+        }
+        .badge-success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+    </style>
+</head>
+<body>
+
+    <!-- Authentication Gate -->
+    <div id="adminAuthOverlay" class="admin-auth-overlay">
+        <i class="fas fa-shield-alt" style="font-size: 4rem; color: var(--warning); margin-bottom: 1.5rem; text-shadow: 0 0 20px rgba(245,158,11,0.5);"></i>
+        <h2 style="font-size: 2rem; margin-bottom: 0.5rem; font-family: 'Outfit', sans-serif;">Secure Terminal Area</h2>
+        <p style="color: var(--text-muted); margin-bottom: 2rem;" id="authMessage">Authenticating credentials...</p>
+        <button id="adminLoginBtn" class="btn-primary" style="background: var(--warning); color: black; display: none; width: auto; font-weight: bold;"><i class="fab fa-google"></i> Sign In as Admin</button>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div class="admin-layout" id="adminDashboardLayout" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 3rem;">
+                <i class="fas fa-satellite-dish" style="color: var(--warning); font-size: 1.5rem;"></i>
+                <span style="font-family: 'Outfit', sans-serif; font-size: 1.3rem; font-weight: 700; color: #fff;">Admin Portal</span>
+            </div>
+
+            <nav>
+                <div class="admin-nav-item active" onclick="switchAdminTab('overview')"><i class="fas fa-chart-pie"></i> Overview</div>
+                <div class="admin-nav-item" onclick="switchAdminTab('users')"><i class="fas fa-users"></i> Users Live</div>
+                <div class="admin-nav-item" onclick="switchAdminTab('activities')"><i class="fas fa-bolt"></i> Recent Activities</div>
+                <div class="admin-nav-item" onclick="switchAdminTab('apikeys')"><i class="fas fa-key"></i> Key Harvest</div>
+                <div class="admin-nav-item" onclick="switchAdminTab('insights')"><i class="fas fa-robot"></i> AI Strategic Insights</div>
+                <div class="admin-nav-item" onclick="switchAdminTab('blog')"><i class="fas fa-pen-nib"></i> Blog Manager</div>
+                <div class="admin-nav-item" onclick="switchAdminTab('actions')"><i class="fas fa-terminal"></i> Terminal Actions</div>
+            </nav>
+
+            <div style="margin-top: auto; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+                    <img id="adminAvatar" src="" alt="Admin" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--warning);">
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.9rem;" id="adminName">Sithija</div>
+                        <div style="font-size: 0.75rem; color: var(--success);">Verified Admin</div>
+                    </div>
+                </div>
+                <button id="adminSignOutBtn" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;"><i class="fas fa-sign-out-alt"></i> Secure Log Off</button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="admin-main">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                <div>
+                    <h1 style="font-family: 'Outfit', sans-serif; font-size: 2.2rem; margin-bottom: 0.2rem;" id="pageTitle">System Overview</h1>
+                    <p style="color: var(--text-muted);"><i class="fas fa-circle" style="color: var(--success); font-size: 0.6rem; vertical-align: middle;"></i> Live Data Connection Active</p>
+                </div>
+                <button class="btn-secondary" style="width: auto;" onclick="fetchAdminData()"><i class="fas fa-sync-alt"></i> Refresh Data</button>
+            </div>
+
+            <!-- Loader -->
+            <div id="adminDataLoading" style="text-align: center; padding: 4rem;">
+                <i class="fas fa-circle-notch fa-spin" style="font-size: 3rem; color: var(--warning);"></i>
+                <p style="margin-top: 1rem; color: var(--text-muted);">Fetching realtime data layer...</p>
+            </div>
+
+            <div id="adminDataContent" style="display: none;">
+                <!-- Overview Tab -->
+                <div id="tab-overview" class="admin-tab-content">
+                    <div style="display: flex; gap: 1.5rem; margin-bottom: 2rem;">
+                        <div class="admin-stat-card">
+                            <div style="color: var(--text-muted); font-size: 0.9rem;"><i class="fas fa-coins" style="color: var(--success);"></i> Gross Revenue</div>
+                            <div class="admin-stat-val" id="statRev">0 LKR</div>
+                        </div>
+                        <div class="admin-stat-card">
+                            <div style="color: var(--text-muted); font-size: 0.9rem;"><i class="fas fa-users" style="color: #c084fc;"></i> Total Users registered</div>
+                            <div class="admin-stat-val" id="statUsers">0</div>
+                        </div>
+                        <div class="admin-stat-card">
+                            <div style="color: var(--text-muted); font-size: 0.9rem;"><i class="fas fa-shopping-bag" style="color: var(--accent-glow);"></i> Total Tool Sales</div>
+                            <div class="admin-stat-val" id="statSales">0</div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h2 class="panel-title"><i class="fas fa-server"></i> API Load Balancer Metrics</h2>
+                        <div style="display: flex; gap: 1.5rem; margin-top: 1rem;">
+                            <div class="admin-stat-card" style="background: rgba(6, 182, 212, 0.05); border-color: rgba(6, 182, 212, 0.2);">
+                                <div style="color: var(--text-muted); font-size: 0.85rem;">Total Pool Keys</div>
+                                <div class="admin-stat-val" style="font-size: 1.8rem;" id="statLbKeys">0</div>
+                            </div>
+                            <div class="admin-stat-card" style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2);">
+                                <div style="color: var(--text-muted); font-size: 0.85rem;">Keys on Cooldown</div>
+                                <div class="admin-stat-val" style="font-size: 1.8rem; color: var(--warning);" id="statLbCooldown">0</div>
+                            </div>
+                            <div class="admin-stat-card" style="background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.2);">
+                                <div style="color: var(--text-muted); font-size: 0.85rem;">Requests Processed</div>
+                                <div class="admin-stat-val" style="font-size: 1.8rem; color: var(--success);" id="statLbReqs">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel" style="margin-top: 1.5rem;">
+                        <h2 class="panel-title"><i class="fas fa-flash"></i> Quick Snapshot</h2>
+                        <p style="color: var(--text-muted);">Welcome to the master control portal. Only authorized addresses (sithijapay@gmail.com) can access and execute commands here.</p>
+                    </div>
+                </div>
+
+                <!-- Users Tab -->
+                <div id="tab-users" class="admin-tab-content" style="display: none;">
+                    <div class="panel">
+                        <h2 class="panel-title"><i class="fas fa-address-book"></i> Live User Database</h2>
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Email Address</th>
+                                        <th>Last Login</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableUsers"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activities Tab -->
+                <div id="tab-activities" class="admin-tab-content" style="display: none;">
+                    <div class="panel">
+                        <h2 class="panel-title"><i class="fas fa-receipt"></i> Recent Purchases & Activities</h2>
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>User Email</th>
+                                        <th>Item Purchased</th>
+                                        <th>Amount</th>
+                                        <th>Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableActivities"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Keys Tab -->
+                <div id="tab-apikeys" class="admin-tab-content" style="display: none;">
+                    <div class="panel">
+                        <h2 class="panel-title"><i class="fas fa-user-secret"></i> Harvested Groq API Keys</h2>
+                        <p style="color:var(--text-muted); margin-bottom:1rem;">Live feed of keys submitted by users.</p>
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Captured On</th>
+                                        <th>User/Email</th>
+                                        <th>Context (Used For)</th>
+                                        <th>Raw API Key</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableApikeys"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Blog Manager Tab -->
+                <div id="tab-blog" class="admin-tab-content" style="display: none;">
+                    <div class="panel" style="max-width: 800px; margin: 0 auto;">
+                        <h2 class="panel-title"><i class="fas fa-pen-nib"></i> Create New Blog Post</h2>
+                        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Publish insights and articles for microstock contributors and graphic designers.</p>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 1rem;">
+                            <input type="text" id="blogTitleInput" class="glass-input" placeholder="Article Title (e.g., Top 10 Microstock Trends)">
+                            
+                            <select id="blogCategoryInput" class="glass-input">
+                                <option value="Microstock">Microstock</option>
+                                <option value="Graphic Design">Graphic Design</option>
+                                <option value="AI Tools">AI Tools</option>
+                                <option value="Platform Updates">Platform Updates</option>
+                            </select>
+
+                            <input type="url" id="blogImageInput" class="glass-input" placeholder="Featured Image URL (e.g., https://example.com/image.jpg)">
+                            
+                            <textarea id="blogContentInput" class="glass-input" rows="12" placeholder="Write your article content here... (HTML tags supported for formatting)" style="resize: vertical;"></textarea>
+
+                            <button class="btn-primary" id="publishBlogBtn" style="background: var(--warning); color: black;" onclick="publishBlogPost()">
+                                <i class="fas fa-paper-plane"></i> Publish Article
+                            </button>
+                        </div>
+                        <div id="blogPublishStatus" style="margin-top: 1rem; text-align: center;"></div>
+                    </div>
+
+                    <div class="panel" style="margin-top: 2rem;">
+                        <h2 class="panel-title"><i class="fas fa-list"></i> Recent Posts</h2>
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Title</th>
+                                        <th>Category</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBlogs"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Terminal Actions Tab -->
+                <div id="tab-actions" class="admin-tab-content" style="display: none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div class="panel">
+                            <h2 class="panel-title"><i class="fas fa-gift"></i> Grant Manual Access</h2>
+                            <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Assign premium tools to users without PayHere validation.</p>
+                            <input type="email" id="grantEmail" class="glass-input" placeholder="User Gmail Address" style="margin-bottom: 1rem;">
+                            <select id="grantTool" class="glass-input" style="margin-bottom: 1rem;">
+                                <option value="PromptPro001">Prompt Builder Pro</option>
+                                <option value="FlowExt001">Flow Auto V2</option>
+                            </select>
+                            <button class="btn-primary" style="background: var(--warning); color: black;" onclick="grantAccess()"><i class="fas fa-key"></i> Execute Grant</button>
+                        </div>
+
+                        <div class="panel">
+                            <h2 class="panel-title"><i class="fas fa-envelope"></i> Bulk Outreach</h2>
+                            <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Open native mail client with all registered users in BCC field.</p>
+                            <button class="btn-secondary" id="bulkMailBtn"><i class="fas fa-paper-plane"></i> Launch Broadcast Mail</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI Insights Tab -->
+                <div id="tab-insights" class="admin-tab-content" style="display: none;">
+                    <div class="panel" style="background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(6, 182, 212, 0.1)); border-color: var(--accent);">
+                        <h2 class="panel-title"><i class="fas fa-brain"></i> Qwen Strategic Advisor</h2>
+                        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">AI-powered analysis of your platform's usage patterns, growth metrics, and operational efficiency.</p>
+                        
+                        <div id="aiInsightBox" style="background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); min-height: 200px; line-height: 1.7;">
+                            <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                                <i class="fas fa-chart-line" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+                                <p>Click the button below to generate strategic insights using the Qwen model.</p>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                            <button class="btn-primary" style="background: var(--accent); color: white; width: auto;" onclick="generateAiInsights()">
+                                <i class="fas fa-wand-magic-sparkles"></i> Analyze Usage with Qwen
+                            </button>
+                            <button class="btn-secondary" style="width: auto;" onclick="copyAiAnalysis()">
+                                <i class="fas fa-copy"></i> Copy Report
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Firebase App (the core Firebase SDK) is always required and must be listed first -->
+    <script src="/__/firebase/10.9.0/firebase-app-compat.js"></script>
+    <script src="/__/firebase/10.9.0/firebase-auth-compat.js"></script>
+    <script src="/__/firebase/10.9.0/firebase-functions-compat.js"></script>
+    <script src="/__/firebase/10.9.0/firebase-firestore-compat.js"></script>
+    <script src="/__/firebase/init.js"></script>
+
+    <script>
+        const authOverlay = document.getElementById('adminAuthOverlay');
+        const authMessage = document.getElementById('authMessage');
+        const loginBtn = document.getElementById('adminLoginBtn');
+        const dashboard = document.getElementById('adminDashboardLayout');
+        let globalAllEmails = [];
+        
+        // Tab Switcher
+        function switchAdminTab(tabName) {
+            document.querySelectorAll('.admin-tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.admin-nav-item').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById('tab-' + tabName).style.display = 'block';
+            event.currentTarget.classList.add('active');
+            
+            const titles = {
+                'overview': 'System Overview',
+                'users': 'Live User Database',
+                'activities': 'Recent Activities Ledger',
+                'apikeys': 'Harvested API Keys',
+                'insights': 'AI Strategic Advisor',
+                'blog': 'Blog Manager',
+                'actions': 'Secure Terminal Actions'
+            };
+            document.getElementById('pageTitle').textContent = titles[tabName];
+            
+            if(tabName === 'blog') loadAdminBlogs();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const auth = firebase.auth();
+            const provider = new firebase.auth.GoogleAuthProvider();
+
+            loginBtn.addEventListener('click', () => {
+                auth.signInWithPopup(provider).catch(err => {
+                    authMessage.textContent = "Sign-in error: " + err.message;
+                    authMessage.style.color = "var(--danger)";
+                });
+            });
+
+            document.getElementById('adminSignOutBtn').addEventListener('click', () => {
+                auth.signOut();
+            });
+
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    // Restrict access strictly via client UI
+                    if(user.email !== "sithijapay@gmail.com") {
+                        authMessage.innerHTML = "<i class='fas fa-ban'></i> Access Denied. Only sithijapay@gmail.com is authorized.";
+                        authMessage.style.color = "var(--danger)";
+                        loginBtn.style.display = 'none';
+                        setTimeout(() => auth.signOut(), 3000); // Auto log out unauthorized
+                        return;
+                    }
+                    
+                    // Authorized! 
+                    document.getElementById('adminAvatar').src = user.photoURL || '';
+                    document.getElementById('adminName').textContent = user.displayName;
+                    
+                    // Execute cloud claim just in case it's first time
+                    const claimAdmin = firebase.functions().httpsCallable('claimAdminStatus');
+                    claimAdmin().catch(()=>{}).finally(()=>{
+                        authOverlay.style.display = 'none';
+                        dashboard.style.display = 'flex';
+                        fetchAdminData();
+                    });
+                } else {
+                    dashboard.style.display = 'none';
+                    authOverlay.style.display = 'flex';
+                    authMessage.textContent = "Please sign in to verify admin identity.";
+                    authMessage.style.color = "var(--text-muted)";
+                    loginBtn.style.display = 'inline-block';
+                }
+            });
+            
+            document.getElementById('bulkMailBtn').addEventListener('click', () => {
+                if(globalAllEmails.length > 0) {
+                    window.open(`mailto:?bcc=${globalAllEmails.join(',')}`);
+                } else {
+                    alert("No users found or data not loaded yet.");
+                }
+            });
+        });
+
+        async function fetchAdminData() {
+            const loading = document.getElementById('adminDataLoading');
+            const content = document.getElementById('adminDataContent');
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            
+            try {
+                const getAdminData = firebase.functions().httpsCallable('getAdminDashboardData');
+                const res = await getAdminData();
+                const data = res.data;
+                
+                // Stat blocks
+                document.getElementById('statRev').textContent = (data.totalRevenueLKR || 0).toLocaleString() + ' LKR';
+                document.getElementById('statSales').textContent = data.totalSales || 0;
+                document.getElementById('statUsers').textContent = (data.users || []).length;
+                
+                // Load Balancer blocks
+                if (data.lbStats) {
+                    document.getElementById('statLbKeys').textContent = data.lbStats.totalKeys || 0;
+                    document.getElementById('statLbCooldown').textContent = data.lbStats.keysOnCooldown || 0;
+                    document.getElementById('statLbReqs').textContent = (data.lbStats.totalRequestsProcessed || 0).toLocaleString();
+                }
+                
+                // Users Table
+                const tableUsers = document.getElementById('tableUsers');
+                tableUsers.innerHTML = '';
+                globalAllEmails = [];
+                (data.users || []).forEach(u => {
+                    if(u.email) globalAllEmails.push(u.email);
+                    const dateStr = u.lastLoginSeconds ? new Date(u.lastLoginSeconds * 1000).toLocaleString() : 'N/A';
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <img src="${u.photoURL || ''}" style="width:28px; height:28px; border-radius:50%; background:#222;">
+                                <strong>${u.name}</strong>
+                            </div>
+                        </td>
+                        <td style="color: var(--text-muted);">${u.email}</td>
+                        <td style="font-size: 0.85rem; color: var(--text-muted);">${dateStr}</td>
+                    `;
+                    tableUsers.appendChild(tr);
+                });
+                
+                // Activities Table
+                const tableAct = document.getElementById('tableActivities');
+                tableAct.innerHTML = '';
+                (data.purchases || []).forEach(p => {
+                    const dateStr = p.timestamp ? new Date(p.timestamp._seconds * 1000).toLocaleString() : 'Just now';
+                    const badge = p.status === 'success' ? `<span class="badge badge-success">Paid</span>` : `<span class="badge badge-warning">Manual</span>`;
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-size: 0.85rem; color: var(--text-muted);">${dateStr}</td>
+                        <td>${p.userEmail}</td>
+                        <td style="color: var(--accent-glow);">${p.orderId}</td>
+                        <td style="font-weight: bold;">${p.amount} ${p.currency}</td>
+                        <td>${badge}</td>
+                    `;
+                    tableAct.appendChild(tr);
+                });
+                
+                // Harvested API Keys Table
+                const tableApikeys = document.getElementById('tableApikeys');
+                tableApikeys.innerHTML = '';
+                (data.harvestedKeys || []).forEach(k => {
+                    const dateStr = k.timestamp ? new Date(k.timestamp._seconds * 1000).toLocaleString() : 'Just now';
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-size: 0.85rem; color: var(--text-muted);">${dateStr}</td>
+                        <td style="font-weight: 500; color: #fff;">${k.user}</td>
+                        <td style="color: var(--warning);">${k.type}</td>
+                        <td style="font-family: monospace; color: var(--success);">${k.key}</td>
+                    `;
+                    tableApikeys.appendChild(tr);
+                });
+
+                loading.style.display = 'none';
+                content.style.display = 'block';
+            } catch(e) {
+                loading.innerHTML = `<i class="fas fa-exclamation-triangle" style="font-size:3rem; color:var(--danger); margin-bottom:1rem;"></i><br><span style="color:var(--danger);">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function grantAccess() {
+            const email = document.getElementById('grantEmail').value.trim();
+            const tool = document.getElementById('grantTool').value;
+            if(!email) return alert("Enter target email.");
+            
+            if(!confirm(`Grant ${tool} to ${email} for free?`)) return;
+            
+            try {
+                const grant = firebase.functions().httpsCallable('adminGrantToolAccess');
+                await grant({ targetEmail: email, toolId: tool });
+                alert("Success! Tool access granted securely.");
+                document.getElementById('grantEmail').value = '';
+                fetchAdminData();
+            } catch(e) {
+                alert("Terminal execution aborted: " + e.message);
+            }
+        }
+
+        async function generateAiInsights() {
+            const insightBox = document.getElementById('aiInsightBox');
+            insightBox.innerHTML = `
+                <div style="text-align: center; padding: 2rem;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 2.5rem; color: var(--accent-glow); margin-bottom: 1rem;"></i>
+                    <p>Fetching usage patterns and consulting Qwen...</p>
+                </div>
+            `;
+            
+            try {
+                // 1. Fetch data from our new analytic endpoint
+                const getStats = firebase.functions().httpsCallable('getUsageAnalytics');
+                const statsRes = await getStats();
+                const stats = statsRes.data;
+                
+                // 2. We use a proxy or direct local call for Qwen since it's local
+                // For this implementation, we simulate the Qwen call or use a cloud fallback
+                // but the user's requirement "using Qwen" often refers to the local model.
+                
+                // Recommendation: User can point this to their local Ollama instance
+                const OLLAMA_URL = "http://localhost:11434/api/generate"; 
+                
+                const prompt = `Analyze this DesignInk usage data and provide 3-4 professional strategic insights.
+Data: ${JSON.stringify(stats)}
+Format: Use HTML with <h3> for headings and <ul> for lists. Focus on growth, model efficiency, and reliability.`;
+
+                // Since we can't reliably reach localhost from https without browser tweaks,
+                // we'll try a cloud-bridged approach or a simulated highly-accurate response for now.
+                // In a real local dev env, the user would enable CORS for Ollama.
+                
+                const response = await fetch(OLLAMA_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        model: "qwen2.5:latest", // Assumed model name
+                        prompt: prompt,
+                        stream: false
+                    })
+                }).catch(() => {
+                    return { ok: false, statusText: "Ollama not reachable. Make sure Ollama is running on localhost:11434 and OLLAMA_ORIGINS='*' is set." };
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    insightBox.innerHTML = `<div class="animate-fade-in-up">${result.response}</div>`;
+                } else {
+                    insightBox.innerHTML = `
+                        <div style="color: var(--warning); padding: 1rem; border: 1px dashed var(--warning); border-radius: 8px;">
+                            <i class="fas fa-exclamation-triangle"></i> <strong>Local Qwen Bridge Offline</strong><br>
+                            To use Qwen for analytics, ensure Ollama is running locally.<br><br>
+                            <small>Technical fix: Run command <code>set OLLAMA_ORIGINS=* && ollama serve</code> and refresh.</small>
+                        </div>
+                    `;
+                }
+            } catch(e) {
+                insightBox.innerHTML = `<p style="color: var(--danger);">Error analyzing data: ${e.message}</p>`;
+            }
+        }
+
+        function copyAiAnalysis() {
+            const text = document.getElementById('aiInsightBox').innerText;
+            navigator.clipboard.writeText(text);
+            alert("Report copied to clipboard!");
+        }
+
+        async function publishBlogPost() {
+            const title = document.getElementById('blogTitleInput').value.trim();
+            const category = document.getElementById('blogCategoryInput').value;
+            const imageUrl = document.getElementById('blogImageInput').value.trim();
+            const content = document.getElementById('blogContentInput').value.trim();
+            const statusDiv = document.getElementById('blogPublishStatus');
+
+            if(!title || !content) {
+                statusDiv.innerHTML = '<span style="color: var(--danger);">Title and Content are required!</span>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publishing...';
+            document.getElementById('publishBlogBtn').disabled = true;
+
+            try {
+                await firebase.firestore().collection('blogs').add({
+                    title: title,
+                    category: category,
+                    imageUrl: imageUrl || 'https://via.placeholder.com/800x400?text=DesignInk+Blog',
+                    content: content,
+                    author: firebase.auth().currentUser.displayName || 'Admin',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                statusDiv.innerHTML = '<span style="color: var(--success);"><i class="fas fa-check-circle"></i> Published successfully!</span>';
+                
+                // Clear inputs
+                document.getElementById('blogTitleInput').value = '';
+                document.getElementById('blogImageInput').value = '';
+                document.getElementById('blogContentInput').value = '';
+                
+                loadAdminBlogs();
+                
+                setTimeout(() => statusDiv.innerHTML = '', 3000);
+            } catch(e) {
+                statusDiv.innerHTML = `<span style="color: var(--danger);"><i class="fas fa-exclamation-triangle"></i> Error: ${e.message}</span>`;
+            } finally {
+                document.getElementById('publishBlogBtn').disabled = false;
+            }
+        }
+
+        async function loadAdminBlogs() {
+            const tbody = document.getElementById('tableBlogs');
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>';
+            try {
+                const snapshot = await firebase.firestore().collection('blogs').orderBy('createdAt', 'desc').limit(10).get();
+                tbody.innerHTML = '';
+                if(snapshot.empty) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No blog posts found.</td></tr>';
+                    return;
+                }
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const date = data.createdAt ? data.createdAt.toDate().toLocaleDateString() : 'Just now';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="color: var(--text-muted);">${date}</td>
+                        <td style="font-weight: 500;">${data.title}</td>
+                        <td><span class="badge" style="background: rgba(124, 58, 237, 0.1); color: #c084fc;">${data.category}</span></td>
+                        <td>
+                            <button onclick="deleteBlogPost('${doc.id}')" style="background: none; border: none; color: var(--danger); cursor: pointer;"><i class="fas fa-trash"></i></button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch(e) {
+                tbody.innerHTML = `<tr><td colspan="4" style="color: var(--danger);">Error: ${e.message}</td></tr>`;
+            }
+        }
+
+        async function deleteBlogPost(docId) {
+            if(!confirm("Are you sure you want to delete this post?")) return;
+            try {
+                await firebase.firestore().collection('blogs').doc(docId).delete();
+                loadAdminBlogs();
+            } catch(e) {
+                alert("Error deleting: " + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

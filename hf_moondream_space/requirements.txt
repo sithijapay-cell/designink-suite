@@ -1,0 +1,6 @@
+gradio
+spaces
+pillow
+transformers>=4.36.0
+torch
+einops

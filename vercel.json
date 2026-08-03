@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/subtitle-studio/(.*)", "destination": "/subtitle-studio/index.html" },
+    { "source": "/api/generateMetadata", "destination": "/api/index.js" },
+    { "source": "/api/groqProxy", "destination": "/api/index.js" },
+    { "source": "/api/fetchCobaltVideo", "destination": "/api/index.js" },
+    { "source": "/api/transcribeVideo", "destination": "/api/index.js" },
+    { "source": "/proxyDownload", "destination": "/api/index.js" },
+    { "source": "/notify", "destination": "/api/index.js" },
+    { "source": "/(.*)", "destination": "/$1" }
+  ]
+}
