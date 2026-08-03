@@ -563,7 +563,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const { b64, mimeType } = await compressImageToBase64(fileObj.file);
 
             const prompt = `You are a professional metadata generator for stock agencies (like Adobe Stock, Shutterstock).
-Generate metadata for the provided image based on these rules:
+Analyze the image provided and generate accurate stock photo metadata.
+Image Filename / Topic Hint: "${fileObj.name}"
+Rules:
 1. Title length should be around ${titleLengthValue.textContent} characters. Make it descriptive and separated by spaces, no commas.
 2. Description length around ${descriptionLengthValue.textContent} characters.
 3. Generate exactly ${keywordsCountValue.textContent} relevant keywords. Do NOT use single quotes.

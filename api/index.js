@@ -207,7 +207,6 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
     const visionModels = [
         "llama-3.2-11b-vision-instruct",
         "llama-3.2-90b-vision-preview",
-        "qwen-2.5-vl-72b",
         "llava-v1.5-7b-instruct"
     ];
 
@@ -245,11 +244,12 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
         }
     }
 
+    // Text-only models fallback: Ensure prompt contains image filename hint
     const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
     const textOnlyMessages = messages.map(msg => {
         if (Array.isArray(msg.content)) {
             const textParts = msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
-            return { role: msg.role, content: textParts || "Generate stock metadata with title, description, keywords." };
+            return { role: msg.role, content: textParts || "Generate accurate stock metadata based on the file topic." };
         }
         return msg;
     });
