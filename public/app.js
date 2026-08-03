@@ -576,10 +576,10 @@ Respond ONLY with a raw JSON object in this exact format, without markdown backt
   "keywords": "k1, k2, k3"
 }`;
 
-            let data;
-            try {
-                const groqProxy = firebase.functions().httpsCallable('groqProxy');
-                const response = await groqProxy({
+            const httpRes = await fetch('/api/groqProxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     apiKey,
                     model: currentModelValue,
                     messages: [{
@@ -591,33 +591,15 @@ Respond ONLY with a raw JSON object in this exact format, without markdown backt
                     }],
                     temperature: 0.5,
                     response_format: { type: "json_object" }
-                });
-                data = response.data;
-            } catch (callableErr) {
-                console.log("Firebase callable fallback to /api/groqProxy...");
-                const httpRes = await fetch('/api/groqProxy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        apiKey,
-                        model: currentModelValue,
-                        messages: [{
-                            role: "user",
-                            content: [
-                                { type: "text", text: prompt },
-                                ...(b64 ? [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }] : [])
-                            ]
-                        }],
-                        temperature: 0.5,
-                        response_format: { type: "json_object" }
-                    })
-                });
-                if (!httpRes.ok) {
-                    const errJson = await httpRes.json().catch(() => ({}));
-                    throw new Error(errJson.error || `HTTP ${httpRes.status} Error`);
-                }
-                data = await httpRes.json();
+                })
+            });
+
+            if (!httpRes.ok) {
+                const errJson = await httpRes.json().catch(() => ({}));
+                throw new Error(errJson.error || `HTTP ${httpRes.status} Error`);
             }
+
+            const data = await httpRes.json();
             const resultText = data?.choices?.[0]?.message?.content || "";
             let parsedResult = null;
 
