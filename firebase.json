@@ -27,6 +27,10 @@
       {
         "source": "/api/generateMetadata",
         "function": "generateMetadata"
+      },
+      {
+        "source": "/api/groqProxy",
+        "function": "groqProxy"
       }
     ],
     "headers": [
