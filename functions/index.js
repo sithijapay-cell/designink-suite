@@ -101,7 +101,17 @@ function parseUserMessagePayload(messages) {
 }
 
 async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature) {
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+    const models = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-3.5-pro",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash-exp"
+    ];
     let lastErr = null;
 
     for (const model of models) {
