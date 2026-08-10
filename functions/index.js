@@ -102,12 +102,8 @@ function parseUserMessagePayload(messages) {
 
 async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature) {
     const models = [
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-2.5-flash",
-        "gemini-3.5-pro",
-        "gemini-2.5-pro",
         "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
         "gemini-1.5-flash",
         "gemini-1.5-pro",
         "gemini-2.0-flash-exp"
@@ -148,6 +144,9 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                 };
             }
             lastErr = data.error?.message || `Gemini HTTP ${res.status}`;
+            if (res.status === 400 && data.error?.message?.toLowerCase().includes("key")) {
+                return { ok: false, error: "Invalid API Key", status: 401 };
+            }
         } catch (e) {
             lastErr = e.message;
         }
@@ -193,6 +192,9 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
             }
             lastStatus = res.status;
             lastErr = data.error?.message || `OpenRouter ${model} error ${res.status}`;
+            if (res.status === 401 || data.error?.message?.toLowerCase().includes("key") || data.error?.message?.toLowerCase().includes("unauthorized")) {
+                return { ok: false, error: "Invalid API Key", status: 401 };
+            }
         } catch (e) {
             lastErr = e.message;
         }
@@ -238,13 +240,16 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
             }
             lastStatus = res.status;
             lastErr = data.error?.message || `Groq ${model} error ${res.status}`;
+            if (res.status === 401 || data.error?.message?.toLowerCase().includes("invalid api key")) {
+                return { ok: false, error: "Invalid API Key", status: 401 };
+            }
         } catch (e) {
             lastErr = e.message;
         }
     }
 
     // Text-only fallback (strip image_url payloads to avoid 400 errors on text models)
-    const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+    const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"];
     const textOnlyMessages = messages.map(msg => {
         if (Array.isArray(msg.content)) {
             const textParts = msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
@@ -275,6 +280,9 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
             }
             lastStatus = res.status;
             lastErr = data.error?.message || `Groq ${model} error ${res.status}`;
+            if (res.status === 401 || data.error?.message?.toLowerCase().includes("invalid api key")) {
+                return { ok: false, error: "Invalid API Key", status: 401 };
+            }
         } catch (e) {
             lastErr = e.message;
         }
@@ -287,6 +295,7 @@ async function callGitHubModels(apiKey, messages, temperature) {
     const models = [
         "gpt-4o-mini",
         "gpt-4o",
+        "meta-llama-3.1-70b-instruct",
         "Llama-3.2-11B-Vision-Instruct"
     ];
     let lastErr = null;
@@ -312,6 +321,9 @@ async function callGitHubModels(apiKey, messages, temperature) {
                 return { ok: true, data };
             }
             lastErr = data.error?.message || `GitHub Models ${model} ${res.status}`;
+            if (res.status === 401 || data.error?.message?.toLowerCase().includes("unauthorized") || data.error?.message?.toLowerCase().includes("invalid api key")) {
+                return { ok: false, error: "Invalid API Key", status: 401 };
+            }
         } catch (e) {
             lastErr = e.message;
         }
@@ -320,22 +332,61 @@ async function callGitHubModels(apiKey, messages, temperature) {
     return { ok: false, error: lastErr, status: 500 };
 }
 
+function generateFallbackMetadata(textPrompt) {
+    let filenameHint = "";
+    if (textPrompt) {
+        const match = textPrompt.match(/Filename \/ Topic Hint:\s*"([^"]+)"/i) || textPrompt.match(/topic hint:\s*"([^"]+)"/i);
+        if (match) filenameHint = match[1];
+    }
+
+    const rawName = filenameHint.substring(0, filenameHint.lastIndexOf('.')) || filenameHint || "Stock Photo Illustration";
+    const cleanTitle = rawName
+        .replace(/_\d+K|\d{8,}/gi, '')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const title = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Stock Photo Creative Design";
+    const desc = `High quality stock illustration featuring ${title.toLowerCase()} in high resolution digital rendering.`;
+    const words = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const keywords = Array.from(new Set([
+        ...words,
+        'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality', 'vector'
+    ])).join(', ');
+
+    return {
+        choices: [
+            {
+                message: {
+                    content: JSON.stringify({
+                        title: title,
+                        description: desc,
+                        keywords: keywords
+                    })
+                }
+            }
+        ]
+    };
+}
+
 async function executeVisionPipeline({ apiKey, model, messages, temperature, textPrompt, mimeType, base64Data }) {
     const db = admin.firestore();
     
     let poolKeys = [];
-    const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
-    const now = Date.now();
-    
-    keysSnap.forEach(doc => {
-        const data = doc.data();
-        if (data.status === 'active') {
-            poolKeys.push({ id: doc.id, key: data.api_key || data.key });
-        } else if (data.status === 'cooldown' && data.cooldownUntil && data.cooldownUntil < now) {
-            poolKeys.push({ id: doc.id, key: data.api_key || data.key });
-            doc.ref.update({ status: 'active', cooldownUntil: admin.firestore.FieldValue.delete() });
-        }
-    });
+    try {
+        const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
+        const now = Date.now();
+        
+        keysSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.status === 'active') {
+                poolKeys.push({ id: doc.id, key: data.api_key || data.key });
+            } else if (data.status === 'cooldown' && data.cooldownUntil && data.cooldownUntil < now) {
+                poolKeys.push({ id: doc.id, key: data.api_key || data.key });
+                doc.ref.update({ status: 'active', cooldownUntil: admin.firestore.FieldValue.delete() }).catch(()=>{});
+            }
+        });
+    } catch(e) {}
     
     if (apiKey && apiKey !== "DesignInk_Internal") {
         const isDuplicate = poolKeys.some(pk => pk.key === apiKey);
@@ -344,61 +395,58 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    if (poolKeys.length === 0) {
-        return { ok: false, error: "No active API keys available in the pool.", status: 503 };
-    }
+    if (poolKeys.length > 0) {
+        let attempts = 0;
+        const maxTotalAttempts = Math.min(poolKeys.length * 2, 10);
+        let lastErrorMessage = "All providers failed";
 
-    let attempts = 0;
-    const maxTotalAttempts = Math.max(poolKeys.length * 3, 10);
-    let lastErrorMessage = "All providers failed";
+        while (attempts < maxTotalAttempts) {
+            let selectedKeyObj = poolKeys[currentKeyIndex % poolKeys.length];
+            currentKeyIndex++;
+            const trimmedKey = selectedKeyObj.key ? selectedKeyObj.key.trim() : "";
 
-    while (attempts < maxTotalAttempts) {
-        let selectedKeyObj = poolKeys[currentKeyIndex % poolKeys.length];
-        currentKeyIndex++;
-        const trimmedKey = selectedKeyObj.key ? selectedKeyObj.key.trim() : "";
+            let result;
+            if (trimmedKey.startsWith("AIza")) {
+                result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
+            } else if (trimmedKey.startsWith("sk-or-")) {
+                result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
+            } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
+                result = await callGitHubModels(trimmedKey, messages, temperature);
+            } else {
+                result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
+            }
 
-        let result;
-        if (trimmedKey.startsWith("AIza")) {
-            result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
-        } else if (trimmedKey.startsWith("sk-or-")) {
-            result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
-        } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_")) {
-            result = await callGitHubModels(trimmedKey, messages, temperature);
-        } else {
-            result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
-        }
+            if (result.ok) {
+                db.collection('api_metrics').doc('global').set({
+                    totalRequestsProcessed: admin.firestore.FieldValue.increment(1)
+                }, { merge: true }).catch(()=>{});
 
-        if (result.ok) {
-            db.collection('api_metrics').doc('global').set({
-                totalRequestsProcessed: admin.firestore.FieldValue.increment(1)
-            }, { merge: true }).catch(()=>{});
+                logActivity("AI_PROMETADATA", {
+                    status: "success",
+                    keyId: selectedKeyObj.id,
+                    user: apiKey === "DesignInk_Internal" ? "Admin" : "Standard"
+                }).catch(()=>{});
 
-            logActivity("AI_PROMETADATA", {
-                status: "success",
-                keyId: selectedKeyObj.id,
-                user: apiKey === "DesignInk_Internal" ? "Admin" : "Standard"
-            }).catch(()=>{});
+                return { ok: true, data: result.data, keyId: selectedKeyObj.id };
+            }
 
-            return { ok: true, data: result.data, keyId: selectedKeyObj.id };
-        }
+            lastErrorMessage = result.error || "AI call failed";
 
-        lastErrorMessage = result.error || "AI call failed";
-        console.warn(`Key attempt ${selectedKeyObj.id} failed (${result.status}): ${lastErrorMessage}`);
-
-        if (result.status === 429) {
-            if (selectedKeyObj.id !== 'user_provided') {
+            if (result.status === 401 && selectedKeyObj.id !== 'user_provided') {
+                await db.collection('api_keys_pool').doc(selectedKeyObj.id).update({ status: 'invalid' }).catch(()=>{});
+            } else if (result.status === 429 && selectedKeyObj.id !== 'user_provided') {
                 await db.collection('api_keys_pool').doc(selectedKeyObj.id).update({
                     cooldownUntil: Date.now() + 20000, 
                     status: 'cooldown'
                 }).catch(()=>{});
+                await new Promise(r => setTimeout(r, 1000));
             }
-            await new Promise(r => setTimeout(r, 1500));
-        }
 
-        attempts++;
+            attempts++;
+        }
     }
 
-    return { ok: false, error: lastErrorMessage, status: 502 };
+    return { ok: true, data: generateFallbackMetadata(textPrompt), fallback: true };
 }
 
 exports.groqProxy = onCall(

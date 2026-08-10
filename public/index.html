@@ -105,10 +105,11 @@
       t.src=v;s=b.getElementsByTagName(e)[0];
       s.parentNode.insertBefore(t,s)}(window, document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', 'PIXEL_ID_PLACEHOLDER');
-      fbq('track', 'PageView');
+      if ('PIXEL_ID_PLACEHOLDER' !== 'PIXEL_ID_PLACEHOLDER' && /^\d+$/.test('PIXEL_ID_PLACEHOLDER')) {
+        fbq('init', 'PIXEL_ID_PLACEHOLDER');
+        fbq('track', 'PageView');
+      }
     </script>
-    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=PIXEL_ID_PLACEHOLDER&ev=PageView&noscript=1"/></noscript>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -482,10 +483,10 @@
                         <div class="panel" id="humanizerKeyInputPanel" style="display: none;">
                             <h3 style="margin-bottom: 0.5rem;"><i class="fas fa-key"></i> Enter your Groq API Key</h3>
                             <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">To use the AI Humanizer, securely connect your own Groq API key. It will be encrypted and saved.</p>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <input type="password" id="humanizerKeyInput" class="input-field" placeholder="gsk_..." style="flex: 1;">
-                                <button class="btn-primary" id="humanizerSaveKeyBtn" style="width: auto;">Save Key</button>
-                            </div>
+                            <form action="javascript:void(0);" method="post" style="display: flex; gap: 0.5rem; width: 100%;">
+                                <input type="password" id="humanizerKeyInput" class="input-field" placeholder="gsk_..." style="flex: 1;" autocomplete="current-password">
+                                <button class="btn-primary" id="humanizerSaveKeyBtn" type="button" style="width: auto;">Save Key</button>
+                            </form>
                         </div>
 
                         <!-- Main Interface -->
@@ -559,11 +560,11 @@
                     </div>
 
                     <div id="apiKeyInputContainer" style="display: block; margin-bottom: 1rem;">
-                        <div class="input-group">
+                        <form action="javascript:void(0);" method="post" class="input-group">
                             <input type="password" id="apiKey" placeholder="Paste single or multiple keys (Gemini, Groq, GitHub, OpenRouter) separated by commas or newlines..." autocomplete="off">
-                            <button id="verifyApiKeyBtn" class="btn-primary" style="width: auto;">Add Key</button>
-                            <button id="cancelApiKeyBtn" class="btn-secondary icon-btn"><i class="fas fa-times"></i></button>
-                        </div>
+                            <button id="verifyApiKeyBtn" type="button" class="btn-primary" style="width: auto;">Add Key</button>
+                            <button id="cancelApiKeyBtn" type="button" class="btn-secondary icon-btn"><i class="fas fa-times"></i></button>
+                        </form>
                     </div>
 
                     <div id="apiKeyNotification" style="display: flex; gap: 10px; color: var(--warning); margin-bottom: 1rem;">
@@ -786,11 +787,11 @@
                     
                     <div class="panel-body metadata-gen-dropdown-content" style="display:block;">
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 1rem;">This key is used specifically for generating bulk prompts.</p>
-                        <div class="input-group">
+                        <form action="javascript:void(0);" method="post" class="input-group">
                             <input type="password" id="promptApiKeyInput" placeholder="gsk_xxxxx..." autocomplete="off">
-                            <button id="savePromptApiKeyBtn" class="btn-primary" style="width: auto;">Save Key</button>
-                            <button id="clearPromptApiKeyBtn" class="btn-secondary icon-btn" style="color: var(--danger);" title="Clear Key"><i class="fas fa-trash"></i></button>
-                        </div>
+                            <button id="savePromptApiKeyBtn" type="button" class="btn-primary" style="width: auto;">Save Key</button>
+                            <button id="clearPromptApiKeyBtn" type="button" class="btn-secondary icon-btn" style="color: var(--danger);" title="Clear Key"><i class="fas fa-trash"></i></button>
+                        </form>
                     </div>
                 </section>
 
@@ -877,10 +878,10 @@
                         <h3 class="panel-title"><i class="fas fa-key"></i> API Key Pool</h3>
                         <span id="auditorKeyCounter" class="beta-tag">0 Keys</span>
                     </div>
-                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-                        <input type="password" id="auditorApiKeyInput" class="input-field" placeholder="gsk_xxxxx..." style="flex: 1;">
-                        <button id="auditorAddKeyBtn" class="btn-primary" style="width: auto;">Add</button>
-                    </div>
+                    <form action="javascript:void(0);" method="post" style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                        <input type="password" id="auditorApiKeyInput" class="input-field" placeholder="gsk_xxxxx..." style="flex: 1;" autocomplete="off">
+                        <button id="auditorAddKeyBtn" type="button" class="btn-primary" style="width: auto;">Add</button>
+                    </form>
                     <div id="auditorKeysList" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
                 </div>
                 
