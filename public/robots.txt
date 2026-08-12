@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Exclude Admin Portal from indexing
+Disallow: /admin-portal.html
+
+# Sitemap URL for Google Search Console
+Sitemap: https://designink.ink/sitemap.xml
