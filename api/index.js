@@ -355,8 +355,11 @@ function generateFallbackMetadata(textPrompt) {
         .replace(/\s+/g, ' ')
         .trim();
 
-    const baseTitle = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Stock Photo Creative Design";
-    let fullTitle = `${baseTitle} - High Quality Digital Graphic Illustration Background Design`;
+    const baseTitle = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Creative Digital Background Illustration Design";
+    let fullTitle = baseTitle;
+    if (!fullTitle.toLowerCase().includes("background") && !fullTitle.toLowerCase().includes("illustration")) {
+        fullTitle += " Background Illustration";
+    }
     if (fullTitle.length > 150) {
         let cut = fullTitle.substring(0, 150);
         const spaceIdx = cut.lastIndexOf(' ');

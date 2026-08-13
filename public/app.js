@@ -571,7 +571,7 @@ Analyze the provided image in full visual detail and generate top-performing SEO
 Image Filename / Topic Hint: "${fileObj.name}"
 
 STRICT RULES:
-1. Title: Must be a complete, highly descriptive SEO title generated strictly by visually inspecting the image content. The title MUST BE AT MOST 150 CHARACTERS LONG (uparima 150 letters). Target length: 110 to 150 characters. DO NOT exceed 150 characters under any circumstances. DO NOT use ellipsis (...) or cut-off sentences.
+1. Title: Must be ONE single, complete, natural, and highly descriptive SEO title (maximum 150 characters). Describe the visual subject, colors, lighting, art style, and composition as a single coherent sentence/title. DO NOT use hyphens (-) to join artificial suffix clauses. DO NOT split title into 2 parts. DO NOT use ellipsis (...) or cut-off words.
 2. Description: Detailed description around ${targetDescLength} characters based on visual analysis.
 3. Keywords: You MUST generate EXACTLY ${targetKeywordsCount} unique, highly relevant, comma-separated keywords. Cover subject, visual style, mood, concept, lighting, composition, and technical elements. Do NOT stop early. Do NOT use single quotes.
 4. Include these required keywords: "${includeKeywords.value}".
@@ -649,13 +649,20 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
                 const rawName = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
                 const formattedName = rawName
+                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
                     .replace(/_\d+K|\d{8,}/gi, '')
                     .replace(/[-_]+/g, ' ')
                     .replace(/\s+/g, ' ')
                     .trim();
 
-                const titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                let fallbackTitle = titleCase ? `${titleCase} - High Quality Digital Graphic Illustration Background Design` : "Stock Photo Creative Digital Background Illustration Design";
+                let titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                titleCase = titleCase.replace(/[…\.]+$|\s*\.\.\.$/g, '').trim();
+
+                let fallbackTitle = titleCase || "Creative Digital Background Illustration Design";
+                if (!fallbackTitle.toLowerCase().includes("background") && !fallbackTitle.toLowerCase().includes("illustration")) {
+                    fallbackTitle += " Background Illustration";
+                }
+
                 if (fallbackTitle.length > 150) {
                     let cut = fallbackTitle.substring(0, 150);
                     const spaceIdx = cut.lastIndexOf(' ');
@@ -671,10 +678,12 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
 
             // --- Post-Processing & Verification ---
-            // 1. Clean Title: strip trailing ellipsis, incomplete quotes or dots and enforce MAX 150 characters
+            // 1. Clean Title: single complete title, strip ellipsis, remove any multi-part hyphenated boilerplate, cap at 150 chars
             if (parsedResult.title) {
                 let cleanTitle = parsedResult.title
-                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
+                    .replace(/[…\.]+$|\s*\.\.\.$/g, '') // remove trailing ellipsis
+                    .replace(/\s*-\s*High Quality Digital Graphic.*$/gi, '') // strip artificial part-2 boilerplate
+                    .replace(/\s*-\s*High Quality Stock.*$/gi, '')
                     .replace(/\s+/g, ' ')
                     .trim();
 
