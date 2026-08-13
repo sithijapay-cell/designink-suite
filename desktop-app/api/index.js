@@ -212,20 +212,28 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
 }
 
 async function callGroqWithFallback(apiKey, messages, temperature, requestedModel) {
-    const visionModels = [
-        "llama-3.2-11b-vision-instruct",
-        "llama-3.2-90b-vision-preview",
-        "llava-v1.5-7b-instruct"
+    const activeGroqModels = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768"
     ];
 
-    if (requestedModel && !visionModels.includes(requestedModel) && !requestedModel.includes('/')) {
-        visionModels.unshift(requestedModel);
+    if (requestedModel && !activeGroqModels.includes(requestedModel) && !requestedModel.includes('/')) {
+        activeGroqModels.unshift(requestedModel);
     }
+
+    const textOnlyMessages = messages.map(msg => {
+        if (Array.isArray(msg.content)) {
+            const textParts = msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+            return { role: msg.role, content: textParts || "Generate accurate stock metadata." };
+        }
+        return msg;
+    });
 
     let lastErr = null;
     let lastStatus = 500;
 
-    for (const model of visionModels) {
+    for (const model of activeGroqModels) {
         try {
             const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
@@ -235,7 +243,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                 },
                 body: JSON.stringify({
                     model,
-                    messages,
+                    messages: textOnlyMessages,
                     temperature: temperature ?? 0.5,
                     max_tokens: 2048,
                     response_format: { type: "json_object" }
