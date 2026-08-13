@@ -645,6 +645,54 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                 }
             }
 
+            // Helper function to sanitize, complete and enrich short/half titles (e.g., "Peach Background Glowing With Wa")
+            function sanitizeAndEnrichTitle(rawTitle, targetMaxLen = 150) {
+                if (!rawTitle) return "Creative Digital Background Vector Graphic Illustration Design";
+
+                // 1. Remove ellipsis, trailing dots, quotes, and artificial hyphenated suffixes
+                let title = String(rawTitle)
+                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
+                    .replace(/\s*-\s*High Quality.*$/gi, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                // 2. Strip trailing cut-off words (like "Wa", "With", "And", "Of", "In", "At", "To", "For", "On", "The", "A", "An", "Or")
+                // Loop to clean multi-word cut-offs like "with wa"
+                for (let i = 0; i < 3; i++) {
+                    title = title.replace(/\s+(?:with|and|or|of|in|on|at|to|for|the|a|an|[a-z]{1,3})$/i, '').trim();
+                }
+
+                // 3. If title is short (under 85 characters), dynamically enrich it into a complete, rich SEO stock title
+                if (title.length < 85) {
+                    const lower = title.toLowerCase();
+                    const additions = [];
+                    if (!lower.includes("abstract") && !lower.includes("modern") && !lower.includes("creative")) additions.push("Abstract Digital Graphic");
+                    if (!lower.includes("rendering") && !lower.includes("illustration") && !lower.includes("vector")) additions.push("Vector Illustration Design");
+                    if (!lower.includes("background") && !lower.includes("backdrop") && !lower.includes("wallpaper")) additions.push("Background Backdrop");
+                    if (!lower.includes("banner") && !lower.includes("presentation") && !lower.includes("commercial")) additions.push("for Commercial Presentation Banner");
+
+                    let enriched = title;
+                    for (const add of additions) {
+                        if ((enriched + " " + add).length <= targetMaxLen) {
+                            enriched += " " + add;
+                        }
+                    }
+                    title = enriched;
+                }
+
+                // 4. Strict Cap at targetMaxLen (150 chars max), breaking on last full word
+                if (title.length > targetMaxLen) {
+                    let cut = title.substring(0, targetMaxLen);
+                    const spaceIdx = cut.lastIndexOf(' ');
+                    if (spaceIdx > 60) {
+                        cut = cut.substring(0, spaceIdx);
+                    }
+                    title = cut.replace(/[\s,.-]+$/, '').trim();
+                }
+
+                return title;
+            }
+
             // Fallback Generator if parsing or API failed
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
                 const rawName = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
@@ -656,19 +704,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     .trim();
 
                 let titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                titleCase = titleCase.replace(/[…\.]+$|\s*\.\.\.$/g, '').trim();
-
-                let fallbackTitle = titleCase || "Creative Digital Background Illustration Design";
-                if (!fallbackTitle.toLowerCase().includes("background") && !fallbackTitle.toLowerCase().includes("illustration")) {
-                    fallbackTitle += " Background Illustration";
-                }
-
-                if (fallbackTitle.length > 150) {
-                    let cut = fallbackTitle.substring(0, 150);
-                    const spaceIdx = cut.lastIndexOf(' ');
-                    if (spaceIdx > 60) cut = cut.substring(0, spaceIdx);
-                    fallbackTitle = cut.replace(/[\s,.-]+$/, '').trim();
-                }
+                const fallbackTitle = sanitizeAndEnrichTitle(titleCase, 150);
                 
                 parsedResult = {
                     title: fallbackTitle,
@@ -678,25 +714,9 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
 
             // --- Post-Processing & Verification ---
-            // 1. Clean Title: single complete title, strip ellipsis, remove any multi-part hyphenated boilerplate, cap at 150 chars
+            // 1. Clean & Enrich Title: eliminate half-titles, cut-off words, and enforce MAX 150 chars
             if (parsedResult.title) {
-                let cleanTitle = parsedResult.title
-                    .replace(/[…\.]+$|\s*\.\.\.$/g, '') // remove trailing ellipsis
-                    .replace(/\s*-\s*High Quality Digital Graphic.*$/gi, '') // strip artificial part-2 boilerplate
-                    .replace(/\s*-\s*High Quality Stock.*$/gi, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-
-                const MAX_TITLE_LEN = 150;
-                if (cleanTitle.length > MAX_TITLE_LEN) {
-                    let truncated = cleanTitle.substring(0, MAX_TITLE_LEN);
-                    const lastSpace = truncated.lastIndexOf(' ');
-                    if (lastSpace > 60) {
-                        truncated = truncated.substring(0, lastSpace);
-                    }
-                    cleanTitle = truncated.replace(/[\s,.-]+$/, '').trim();
-                }
-                parsedResult.title = cleanTitle;
+                parsedResult.title = sanitizeAndEnrichTitle(parsedResult.title, 150);
             }
 
             // 2. Keywords Verification & Auto-Padding to guarantee exact count (e.g. 45 keywords)

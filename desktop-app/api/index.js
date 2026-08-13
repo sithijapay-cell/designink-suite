@@ -338,6 +338,48 @@ async function callGitHubModels(apiKey, messages, temperature) {
     return { ok: false, error: lastErr, status: 500 };
 }
 
+function sanitizeAndEnrichTitle(rawTitle, targetMaxLen = 150) {
+    if (!rawTitle) return "Creative Digital Background Vector Graphic Illustration Design";
+
+    let title = String(rawTitle)
+        .replace(/[…\.]+$|\s*\.\.\.$/g, '')
+        .replace(/\s*-\s*High Quality.*$/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    for (let i = 0; i < 3; i++) {
+        title = title.replace(/\s+(?:with|and|or|of|in|on|at|to|for|the|a|an|[a-z]{1,3})$/i, '').trim();
+    }
+
+    if (title.length < 85) {
+        const lower = title.toLowerCase();
+        const additions = [];
+        if (!lower.includes("abstract") && !lower.includes("modern") && !lower.includes("creative")) additions.push("Abstract Digital Graphic");
+        if (!lower.includes("rendering") && !lower.includes("illustration") && !lower.includes("vector")) additions.push("Vector Illustration Design");
+        if (!lower.includes("background") && !lower.includes("backdrop") && !lower.includes("wallpaper")) additions.push("Background Backdrop");
+        if (!lower.includes("banner") && !lower.includes("presentation") && !lower.includes("commercial")) additions.push("for Commercial Presentation Banner");
+
+        let enriched = title;
+        for (const add of additions) {
+            if ((enriched + " " + add).length <= targetMaxLen) {
+                enriched += " " + add;
+            }
+        }
+        title = enriched;
+    }
+
+    if (title.length > targetMaxLen) {
+        let cut = title.substring(0, targetMaxLen);
+        const spaceIdx = cut.lastIndexOf(' ');
+        if (spaceIdx > 60) {
+            cut = cut.substring(0, spaceIdx);
+        }
+        title = cut.replace(/[\s,.-]+$/, '').trim();
+    }
+
+    return title;
+}
+
 function generateFallbackMetadata(textPrompt) {
     let filenameHint = "";
     let targetCount = 45;
@@ -356,16 +398,7 @@ function generateFallbackMetadata(textPrompt) {
         .trim();
 
     const baseTitle = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Creative Digital Background Illustration Design";
-    let fullTitle = baseTitle;
-    if (!fullTitle.toLowerCase().includes("background") && !fullTitle.toLowerCase().includes("illustration")) {
-        fullTitle += " Background Illustration";
-    }
-    if (fullTitle.length > 150) {
-        let cut = fullTitle.substring(0, 150);
-        const spaceIdx = cut.lastIndexOf(' ');
-        if (spaceIdx > 60) cut = cut.substring(0, spaceIdx);
-        fullTitle = cut.replace(/[\s,.-]+$/, '').trim();
-    }
+    const fullTitle = sanitizeAndEnrichTitle(baseTitle, 150);
 
     const desc = `High quality stock illustration featuring ${baseTitle.toLowerCase()} in high resolution digital rendering suitable for commercial and creative projects.`;
     
