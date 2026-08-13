@@ -252,47 +252,6 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
         }
     }
 
-    // Text-only models fallback: Ensure prompt contains image filename hint
-    const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"];
-    const textOnlyMessages = messages.map(msg => {
-        if (Array.isArray(msg.content)) {
-            const textParts = msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
-            return { role: msg.role, content: textParts || "Generate accurate stock metadata based on the file topic." };
-        }
-        return msg;
-    });
-
-    for (const model of textModels) {
-        try {
-            const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model,
-                    messages: textOnlyMessages,
-                    temperature: temperature ?? 0.5,
-                    max_tokens: 2048,
-                    response_format: { type: "json_object" }
-                })
-            });
-
-            const data = await res.json();
-            if (res.ok && data.choices?.[0]?.message?.content) {
-                return { ok: true, data };
-            }
-            lastStatus = res.status;
-            lastErr = data.error?.message || `Groq ${model} error ${res.status}`;
-            if (res.status === 401 || data.error?.message?.toLowerCase().includes("invalid api key")) {
-                return { ok: false, error: "Invalid API Key", status: 401 };
-            }
-        } catch (e) {
-            lastErr = e.message;
-        }
-    }
-
     return { ok: false, error: lastErr, status: lastStatus };
 }
 

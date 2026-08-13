@@ -475,18 +475,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- Image Compression & Base64 Conversion ---
-    function compressImageToBase64(file) {
+    // --- Image Compression & Base64 Conversion for Vision AI Models ---
+    function compressImageToBase64(fileSource) {
         return new Promise((resolve, reject) => {
-            if (!file) {
-                return resolve({ b64: '', mimeType: 'image/jpeg' });
+            if (!fileSource) {
+                return reject(new Error("No image file or URL available for Vision AI model analysis"));
             }
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const img = new Image();
-                img.onload = function() {
+
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+
+            img.onload = function() {
+                try {
                     const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 800; // Optimized size for AI vision tasks
-                    const MAX_HEIGHT = 800;
+                    const MAX_WIDTH = 1024; // High clarity size for AI vision model inspection
+                    const MAX_HEIGHT = 1024;
                     let width = img.width;
                     let height = img.height;
 
@@ -508,19 +511,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.fillStyle = "#FFFFFF"; // Fill transparent backgrounds
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                     ctx.drawImage(img, 0, 0, width, height);
-                    
-                    // Compress to JPEG with 0.75 quality for balancing size and AI visibility
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    const b64 = dataUrl.split(',')[1];
+                    if (!b64) {
+                        return reject(new Error("Failed to extract Base64 data from image canvas"));
+                    }
                     resolve({
-                        b64: dataUrl.split(',')[1],
+                        b64,
                         mimeType: 'image/jpeg'
                     });
-                };
-                img.onerror = error => reject(error);
-                img.src = event.target.result;
+                } catch(e) {
+                    reject(e);
+                }
             };
-            reader.onerror = error => reject(error);
-            reader.readAsDataURL(file);
+
+            img.onerror = function() {
+                reject(new Error("Failed to render image onto canvas for Vision AI processing"));
+            };
+
+            if (fileSource instanceof File || fileSource instanceof Blob) {
+                const reader = new FileReader();
+                reader.onload = e => { img.src = e.target.result; };
+                reader.onerror = e => reject(e);
+                reader.readAsDataURL(fileSource);
+            } else if (typeof fileSource === 'string') {
+                img.src = fileSource;
+            } else {
+                reject(new Error("Unsupported image source format"));
+            }
         });
     }
     
@@ -559,21 +578,26 @@ document.addEventListener('DOMContentLoaded', () => {
             renderFilesList();
             currentFileName.textContent = fileObj.name;
 
-            // Compress image to save bandwidth and prevent AI timeouts
-            const { b64, mimeType } = await compressImageToBase64(fileObj.file);
+            // Extract Base64 image payload from file object or image URL
+            const imageSource = fileObj.file || fileObj.url;
+            const { b64, mimeType } = await compressImageToBase64(imageSource);
+            if (!b64) {
+                throw new Error("Could not load image payload for Vision AI model analysis.");
+            }
 
-            const targetKeywordsCount = parseInt(keywordsCountValue ? keywordsCountValue.textContent : '45', 10) || 45;
+            const targetKeywordsCount = Math.max(parseInt(keywordsCountValue ? keywordsCountValue.textContent : '45', 10) || 45, 45);
             const targetTitleLength = Math.min(parseInt(titleLengthValue ? titleLengthValue.textContent : '150', 10) || 150, 150);
             const targetDescLength = parseInt(descriptionLengthValue ? descriptionLengthValue.textContent : '150', 10) || 150;
 
             const prompt = `You are an elite, highly experienced stock agency metadata generator (Adobe Stock, Shutterstock, Freepik, Getty Images).
-Analyze the provided image in full visual detail and generate top-performing SEO stock metadata based on what is visible in the image.
-Image Filename / Topic Hint: "${fileObj.name}"
+LOOK AT THE PROVIDED IMAGE VERY CAREFULLY AND READ ALL VISUAL DETAILS (subject, colors, lighting, art style, composition, objects, backdrop).
+
+Generate top-performing SEO stock metadata based EXCLUSIVELY on what you visually see in the image:
 
 STRICT RULES:
-1. Title: Must be ONE single, complete, natural, and highly descriptive SEO title (maximum 150 characters). Describe the visual subject, colors, lighting, art style, and composition as a single coherent sentence/title. DO NOT use hyphens (-) to join artificial suffix clauses. DO NOT split title into 2 parts. DO NOT use ellipsis (...) or cut-off words.
-2. Description: Detailed description around ${targetDescLength} characters based on visual analysis.
-3. Keywords: You MUST generate EXACTLY ${targetKeywordsCount} unique, highly relevant, comma-separated keywords. Cover subject, visual style, mood, concept, lighting, composition, and technical elements. Do NOT stop early. Do NOT use single quotes.
+1. Title: Must be ONE single, complete, natural, and highly descriptive SEO title (maximum 150 characters). Describe what is visually shown in the image (subject, colors, lighting, art style). Target length: 90 to 140 characters. DO NOT use filename text as title. DO NOT output short half-titles. DO NOT use ellipsis (...) or cut-off words.
+2. Description: Detailed description around ${targetDescLength} characters describing what is visually shown in the image.
+3. Keywords: You MUST generate AT LEAST ${targetKeywordsCount} unique, highly relevant, comma-separated keywords (up to 50 keywords). Cover visual subject, style, mood, concept, lighting, composition, color palette, and technical elements. Do NOT stop early.
 4. Include these required keywords: "${includeKeywords.value}".
 5. Exclude these banned keywords: "${excludeKeywords.value}".
 
@@ -596,7 +620,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                             role: "user",
                             content: [
                                 { type: "text", text: prompt },
-                                ...(b64 ? [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }] : [])
+                                { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }
                             ]
                         }],
                         temperature: 0.4,
