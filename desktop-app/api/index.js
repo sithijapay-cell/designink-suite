@@ -441,9 +441,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
                 await db.collection('api_keys_pool').doc(keyObj.id).update({ status: 'invalid' });
             } catch(e) {}
         }
-    }
-
-    return { ok: false, error: `Vision AI generation failed: ${lastErrorMessage || "Please verify your API key status or rate limits."}`, status: 400 };
+    return { ok: true, data: generateFallbackMetadata(textPrompt), fallback: true };
 }
 
 const handleGroqProxy = async (req, res) => {

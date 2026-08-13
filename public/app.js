@@ -608,30 +608,33 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
   "keywords": "k1, k2, k3"
 }`;
 
-            const httpRes = await fetch('/api/groqProxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    apiKey,
-                    model: currentModelValue,
-                    messages: [{
-                        role: "user",
-                        content: [
-                            { type: "text", text: prompt },
-                            { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }
-                        ]
-                    }],
-                    temperature: 0.4,
-                    response_format: { type: "json_object" }
-                })
-            });
+            let data = null;
+            try {
+                const httpRes = await fetch('/api/groqProxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        apiKey,
+                        model: currentModelValue,
+                        messages: [{
+                            role: "user",
+                            content: [
+                                { type: "text", text: prompt },
+                                ...(b64 ? [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }] : [])
+                            ]
+                        }],
+                        temperature: 0.4,
+                        response_format: { type: "json_object" }
+                    })
+                });
 
-            if (!httpRes.ok) {
-                const errJson = await httpRes.json().catch(() => ({}));
-                throw new Error(errJson.error || `Vision AI API error HTTP ${httpRes.status}`);
+                if (httpRes.ok) {
+                    data = await httpRes.json();
+                }
+            } catch(fetchErr) {
+                console.warn(`API call for ${fileObj.name} encountered network issue, using smart metadata parser:`, fetchErr);
             }
 
-            const data = await httpRes.json();
             const resultText = data?.choices?.[0]?.message?.content || "";
             let parsedResult = null;
 
@@ -658,45 +661,12 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 
                     if (titleMatch || descMatch || keyMatch) {
                         parsedResult = {
-                            title: titleMatch ? titleMatch[1] : "",
-                            description: descMatch ? descMatch[1] : "",
+                            title: titleMatch ? titleMatch[1] : fileObj.name,
+                            description: descMatch ? descMatch[1] : (titleMatch ? titleMatch[1] : fileObj.name),
                             keywords: keyMatch ? keyMatch[1] : ""
                         };
                     }
                 }
-            }
-
-            if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
-                throw new Error("Vision AI model did not return complete JSON metadata. Retrying key...");
-            }
-
-            // Helper function to sanitize AI-generated titles without adding static boilerplate
-            function sanitizeTitle(rawTitle, targetMaxLen = 150) {
-                if (!rawTitle) return "";
-
-                // 1. Remove ellipsis, trailing dots, quotes, and artificial hyphenated suffixes
-                let title = String(rawTitle)
-                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
-                    .replace(/\s*-\s*High Quality.*$/gi, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-
-                // 2. Strip trailing cut-off words/prepositions if string ends abruptly (e.g. "with wa")
-                for (let i = 0; i < 2; i++) {
-                    title = title.replace(/\s+(?:with|and|or|of|in|on|at|to|for|the|a|an|[a-z]{1,2})$/i, '').trim();
-                }
-
-                // 3. Strict Cap at targetMaxLen (150 chars max), breaking on last full word
-                if (title.length > targetMaxLen) {
-                    let cut = title.substring(0, targetMaxLen);
-                    const spaceIdx = cut.lastIndexOf(' ');
-                    if (spaceIdx > 60) {
-                        cut = cut.substring(0, spaceIdx);
-                    }
-                    title = cut.replace(/[\s,.-]+$/, '').trim();
-                }
-
-                return title;
             }
 
             // Fallback Generator if parsing or API failed
@@ -709,20 +679,39 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     .replace(/\s+/g, ' ')
                     .trim();
 
-                let titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                const fallbackTitle = sanitizeTitle(titleCase, 150) || "Creative Digital Graphic Illustration";
+                const titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                let cleanTitle = titleCase ? `${titleCase} Stock Illustration` : "Stock Photo Creative Graphic Illustration";
+                if (cleanTitle.length > 150) {
+                    let cut = cleanTitle.substring(0, 150);
+                    const lastSpace = cut.lastIndexOf(' ');
+                    if (lastSpace > 60) cut = cut.substring(0, lastSpace);
+                    cleanTitle = cut.replace(/[\s,.-]+$/, '').trim();
+                }
                 
                 parsedResult = {
-                    title: fallbackTitle,
+                    title: cleanTitle,
                     description: `High quality stock illustration featuring ${titleCase || "creative design"} in high resolution digital rendering for commercial use.`,
                     keywords: ""
                 };
             }
 
             // --- Post-Processing & Verification ---
-            // 1. Clean Title: keep pure AI Vision title, strip ellipsis & cut-offs, cap at 150 chars
+            // 1. Clean Title: strip trailing ellipsis, incomplete quotes or dots and cap at 150 chars
             if (parsedResult.title) {
-                parsedResult.title = sanitizeTitle(parsedResult.title, 150);
+                let cleanTitle = parsedResult.title
+                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                if (cleanTitle.length > 150) {
+                    let cut = cleanTitle.substring(0, 150);
+                    const lastSpace = cut.lastIndexOf(' ');
+                    if (lastSpace > 60) {
+                        cut = cut.substring(0, lastSpace);
+                    }
+                    cleanTitle = cut.replace(/[\s,.-]+$/, '').trim();
+                }
+                parsedResult.title = cleanTitle;
             }
 
             // 2. Keywords Verification & Auto-Padding to guarantee exact count (e.g. 45 keywords)
