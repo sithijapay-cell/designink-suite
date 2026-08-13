@@ -443,7 +443,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    return { ok: true, data: generateFallbackMetadata(textPrompt), fallback: true };
+    return { ok: false, error: `Vision AI generation failed: ${lastErrorMessage || "Please verify your API key status or rate limits."}`, status: 400 };
 }
 
 const handleGroqProxy = async (req, res) => {

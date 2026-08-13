@@ -669,30 +669,8 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                 }
             }
 
-            // Fallback Generator if parsing or API failed
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
-                const rawName = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
-                const formattedName = rawName
-                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
-                    .replace(/_\d+K|\d{8,}/gi, '')
-                    .replace(/[-_]+/g, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-
-                const titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                let cleanTitle = titleCase ? `${titleCase} Stock Illustration` : "Stock Photo Creative Graphic Illustration";
-                if (cleanTitle.length > 150) {
-                    let cut = cleanTitle.substring(0, 150);
-                    const lastSpace = cut.lastIndexOf(' ');
-                    if (lastSpace > 60) cut = cut.substring(0, lastSpace);
-                    cleanTitle = cut.replace(/[\s,.-]+$/, '').trim();
-                }
-                
-                parsedResult = {
-                    title: cleanTitle,
-                    description: `High quality stock illustration featuring ${titleCase || "creative design"} in high resolution digital rendering for commercial use.`,
-                    keywords: ""
-                };
+                throw new Error("Vision AI model failed to return complete metadata. Retrying with next API key...");
             }
 
             // --- Post-Processing & Verification ---
