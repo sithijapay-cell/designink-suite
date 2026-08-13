@@ -608,33 +608,30 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
   "keywords": "k1, k2, k3"
 }`;
 
-            let data = null;
-            try {
-                const httpRes = await fetch('/api/groqProxy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        apiKey,
-                        model: currentModelValue,
-                        messages: [{
-                            role: "user",
-                            content: [
-                                { type: "text", text: prompt },
-                                { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }
-                            ]
-                        }],
-                        temperature: 0.4,
-                        response_format: { type: "json_object" }
-                    })
-                });
+            const httpRes = await fetch('/api/groqProxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    apiKey,
+                    model: currentModelValue,
+                    messages: [{
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }
+                        ]
+                    }],
+                    temperature: 0.4,
+                    response_format: { type: "json_object" }
+                })
+            });
 
-                if (httpRes.ok) {
-                    data = await httpRes.json();
-                }
-            } catch(fetchErr) {
-                console.warn(`API call for ${fileObj.name} encountered network issue, using smart metadata parser:`, fetchErr);
+            if (!httpRes.ok) {
+                const errJson = await httpRes.json().catch(() => ({}));
+                throw new Error(errJson.error || `Vision AI API error HTTP ${httpRes.status}`);
             }
 
+            const data = await httpRes.json();
             const resultText = data?.choices?.[0]?.message?.content || "";
             let parsedResult = null;
 
@@ -661,12 +658,16 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 
                     if (titleMatch || descMatch || keyMatch) {
                         parsedResult = {
-                            title: titleMatch ? titleMatch[1] : fileObj.name,
-                            description: descMatch ? descMatch[1] : (titleMatch ? titleMatch[1] : fileObj.name),
+                            title: titleMatch ? titleMatch[1] : "",
+                            description: descMatch ? descMatch[1] : "",
                             keywords: keyMatch ? keyMatch[1] : ""
                         };
                     }
                 }
+            }
+
+            if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
+                throw new Error("Vision AI model did not return complete JSON metadata. Retrying key...");
             }
 
             // Helper function to sanitize AI-generated titles without adding static boilerplate

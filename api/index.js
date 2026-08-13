@@ -85,10 +85,14 @@ function parseUserMessagePayload(messages) {
                             textPrompt = item.text;
                         } else if (item.type === "image_url" && item.image_url?.url) {
                             const dataUrl = item.image_url.url;
-                            const match = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-                            if (match) {
-                                mimeType = match[1];
-                                base64Data = match[2];
+                            if (dataUrl.startsWith("data:")) {
+                                const commaIdx = dataUrl.indexOf(",");
+                                if (commaIdx !== -1) {
+                                    const header = dataUrl.substring(0, commaIdx);
+                                    base64Data = dataUrl.substring(commaIdx + 1).trim();
+                                    const mimeMatch = header.match(/^data:([^;]+);/);
+                                    if (mimeMatch) mimeType = mimeMatch[1];
+                                }
                             }
                         }
                     }
@@ -430,7 +434,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    return { ok: true, data: generateFallbackMetadata(textPrompt), fallback: true };
+    return { ok: false, error: "All provided API keys or Vision AI models failed. Please verify your API keys (Gemini, Groq, OpenRouter, or GitHub PAT).", status: 400 };
 }
 
 const handleGroqProxy = async (req, res) => {
