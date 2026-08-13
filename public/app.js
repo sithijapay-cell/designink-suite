@@ -562,16 +562,22 @@ document.addEventListener('DOMContentLoaded', () => {
             // Compress image to save bandwidth and prevent AI timeouts
             const { b64, mimeType } = await compressImageToBase64(fileObj.file);
 
-            const prompt = `You are a professional metadata generator for stock agencies (like Adobe Stock, Shutterstock).
-Analyze the image provided and generate accurate stock photo metadata.
+            const targetKeywordsCount = parseInt(keywordsCountValue ? keywordsCountValue.textContent : '45', 10) || 45;
+            const targetTitleLength = parseInt(titleLengthValue ? titleLengthValue.textContent : '150', 10) || 150;
+            const targetDescLength = parseInt(descriptionLengthValue ? descriptionLengthValue.textContent : '150', 10) || 150;
+
+            const prompt = `You are an elite, highly experienced stock agency metadata generator (Adobe Stock, Shutterstock, Freepik, Getty Images).
+Analyze the provided image in full detail and generate top-performing SEO stock metadata.
 Image Filename / Topic Hint: "${fileObj.name}"
-Rules:
-1. Title length should be around ${titleLengthValue.textContent} characters. Make it descriptive and separated by spaces, no commas.
-2. Description length around ${descriptionLengthValue.textContent} characters.
-3. Generate exactly ${keywordsCountValue.textContent} relevant keywords. Do NOT use single quotes.
-4. Include these keywords if provided: "${includeKeywords.value}".
-5. Exclude these keywords if provided: "${excludeKeywords.value}".
-Respond ONLY with a raw JSON object in this exact format, without markdown backticks:
+
+STRICT RULES:
+1. Title: Must be a complete, highly descriptive SEO title of around ${targetTitleLength} characters. Make it descriptive and natural without any ellipsis (...) or cut-off sentences.
+2. Description: Detailed description around ${targetDescLength} characters.
+3. Keywords: You MUST generate EXACTLY ${targetKeywordsCount} unique, highly relevant, comma-separated keywords. Cover subject, visual style, mood, concept, lighting, composition, and technical elements. Do NOT stop early. Do NOT use single quotes.
+4. Include these required keywords: "${includeKeywords.value}".
+5. Exclude these banned keywords: "${excludeKeywords.value}".
+
+Respond ONLY with a valid raw JSON object in this exact format, without markdown backticks:
 {
   "title": "...",
   "description": "...",
@@ -593,7 +599,7 @@ Respond ONLY with a raw JSON object in this exact format, without markdown backt
                                 ...(b64 ? [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}` } }] : [])
                             ]
                         }],
-                        temperature: 0.5,
+                        temperature: 0.4,
                         response_format: { type: "json_object" }
                     })
                 });
@@ -633,13 +639,13 @@ Respond ONLY with a raw JSON object in this exact format, without markdown backt
                         parsedResult = {
                             title: titleMatch ? titleMatch[1] : fileObj.name,
                             description: descMatch ? descMatch[1] : (titleMatch ? titleMatch[1] : fileObj.name),
-                            keywords: keyMatch ? keyMatch[1] : "abstract, digital art, illustration, background, design"
+                            keywords: keyMatch ? keyMatch[1] : ""
                         };
                     }
                 }
             }
 
-            // Dynamic File-Specific Fallback: Clean filename of timestamps and resolution codes
+            // Fallback Generator if parsing or API failed
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
                 const rawName = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
                 const formattedName = rawName
@@ -649,17 +655,64 @@ Respond ONLY with a raw JSON object in this exact format, without markdown backt
                     .trim();
 
                 const titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                const keywordsList = Array.from(new Set([
-                    ...formattedName.toLowerCase().split(/\s+/).filter(w => w.length > 2),
-                    'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality'
-                ])).join(', ');
-
+                
                 parsedResult = {
-                    title: titleCase || "Stock Image Illustration",
-                    description: `Detailed stock illustration featuring ${titleCase || "creative design"} in high quality digital rendering.`,
-                    keywords: keywordsList
+                    title: titleCase ? `${titleCase} Stock Illustration` : "Stock Photo Creative Design",
+                    description: `High quality stock illustration featuring ${titleCase || "creative design"} in high resolution digital rendering for commercial use.`,
+                    keywords: ""
                 };
             }
+
+            // --- Post-Processing & Verification ---
+            // 1. Clean Title: strip trailing ellipsis, incomplete quotes or dots
+            if (parsedResult.title) {
+                parsedResult.title = parsedResult.title
+                    .replace(/[…\.]+$|\s*\.\.\.$/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+
+            // 2. Keywords Verification & Auto-Padding to guarantee exact count (e.g. 45 keywords)
+            let rawKeywords = parsedResult.keywords;
+            let kwArray = [];
+            if (Array.isArray(rawKeywords)) {
+                kwArray = rawKeywords.map(k => String(k).trim());
+            } else if (typeof rawKeywords === 'string') {
+                kwArray = rawKeywords.split(',').map(k => k.trim());
+            }
+
+            // Exclude banned keywords
+            const excludedList = (excludeKeywords.value || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+            kwArray = kwArray.filter(k => k && !excludedList.includes(k.toLowerCase()));
+
+            // Force include keywords
+            const includedList = (includeKeywords.value || '').split(/[\s,]+/).filter(Boolean);
+            const combinedSet = new Set([...includedList, ...kwArray]);
+
+            // Add title words as keywords if needed
+            if (parsedResult.title) {
+                const titleWords = parsedResult.title.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+                titleWords.forEach(w => combinedSet.add(w));
+            }
+
+            // Pool of high-performing stock keywords to pad up to target count (e.g. 45)
+            const stockPaddingPool = [
+                'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality',
+                'vector', 'concept', 'modern', 'wallpaper', 'creative', 'element', 'banner', 'pattern', 'texture', 'symbol',
+                'abstract', 'artistic', 'backdrop', 'decor', 'decorative', 'style', 'color', 'bright', 'vibrant', 'light',
+                'render', '3d', 'template', 'presentation', 'business', 'marketing', 'commercial', 'media', 'creative art',
+                'digital creation', 'sharp details', 'high resolution', 'stock graphic', 'visual', 'artwork', 'trendy design',
+                'contemporary', 'studio shot', 'no people', 'copyspace', 'blank space', 'professional', 'composition'
+            ];
+
+            stockPaddingPool.forEach(term => combinedSet.add(term));
+
+            let finalKwList = Array.from(combinedSet).filter(Boolean);
+            if (finalKwList.length > targetKeywordsCount) {
+                finalKwList = finalKwList.slice(0, targetKeywordsCount);
+            }
+
+            parsedResult.keywords = finalKwList.join(', ');
 
             if (filenameAsTitle.checked) {
                 const nameWithoutExt = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;

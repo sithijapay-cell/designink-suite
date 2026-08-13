@@ -126,7 +126,8 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                     }],
                     generationConfig: {
                         responseMimeType: "application/json",
-                        temperature: temperature ?? 0.5
+                        temperature: temperature ?? 0.5,
+                        maxOutputTokens: 2048
                     }
                 })
             });
@@ -182,6 +183,7 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
                     model,
                     messages,
                     temperature: temperature ?? 0.5,
+                    max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
             });
@@ -230,6 +232,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                     model,
                     messages,
                     temperature: temperature ?? 0.5,
+                    max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
             });
@@ -270,6 +273,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                     model,
                     messages: textOnlyMessages,
                     temperature: temperature ?? 0.5,
+                    max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
             });
@@ -312,6 +316,7 @@ async function callGitHubModels(apiKey, messages, temperature) {
                     model,
                     messages,
                     temperature: temperature ?? 0.5,
+                    max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
             });
@@ -334,9 +339,12 @@ async function callGitHubModels(apiKey, messages, temperature) {
 
 function generateFallbackMetadata(textPrompt) {
     let filenameHint = "";
+    let targetCount = 45;
     if (textPrompt) {
         const match = textPrompt.match(/Filename \/ Topic Hint:\s*"([^"]+)"/i) || textPrompt.match(/topic hint:\s*"([^"]+)"/i);
         if (match) filenameHint = match[1];
+        const countMatch = textPrompt.match(/Generate exactly (\d+)/i) || textPrompt.match(/(\d+)\s+keywords/i);
+        if (countMatch && countMatch[1]) targetCount = parseInt(countMatch[1], 10);
     }
 
     const rawName = filenameHint.substring(0, filenameHint.lastIndexOf('.')) || filenameHint || "Stock Photo Illustration";
@@ -347,12 +355,19 @@ function generateFallbackMetadata(textPrompt) {
         .trim();
 
     const title = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Stock Photo Creative Design";
-    const desc = `High quality stock illustration featuring ${title.toLowerCase()} in high resolution digital rendering.`;
-    const words = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const keywords = Array.from(new Set([
-        ...words,
-        'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality', 'vector'
-    ])).join(', ');
+    const desc = `High quality stock illustration featuring ${title.toLowerCase()} in high resolution digital rendering suitable for commercial and creative projects.`;
+    
+    const baseWords = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const standardStockTerms = [
+        'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality',
+        'vector', 'concept', 'modern', 'wallpaper', 'creative', 'element', 'banner', 'pattern', 'texture', 'symbol',
+        'abstract', 'artistic', 'backdrop', 'decor', 'decorative', 'style', 'color', 'bright', 'vibrant', 'light',
+        'render', '3d', 'template', 'presentation', 'business', 'marketing', 'commercial', 'media', 'creative art',
+        'digital creation', 'sharp details', 'high resolution', 'stock graphic', 'visual', 'artwork', 'trendy design'
+    ];
+
+    const keywordsSet = new Set([...baseWords, ...standardStockTerms]);
+    const finalKeywordsList = Array.from(keywordsSet).slice(0, Math.max(targetCount, 45)).join(', ');
 
     return {
         choices: [
@@ -361,7 +376,7 @@ function generateFallbackMetadata(textPrompt) {
                     content: JSON.stringify({
                         title: title,
                         description: desc,
-                        keywords: keywords
+                        keywords: finalKeywordsList
                     })
                 }
             }
