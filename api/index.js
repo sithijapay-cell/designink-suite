@@ -355,8 +355,16 @@ function generateFallbackMetadata(textPrompt) {
         .replace(/\s+/g, ' ')
         .trim();
 
-    const title = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Stock Photo Creative Design";
-    const desc = `High quality stock illustration featuring ${title.toLowerCase()} in high resolution digital rendering suitable for commercial and creative projects.`;
+    const baseTitle = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Stock Photo Creative Design";
+    let fullTitle = `${baseTitle} - High Quality Digital Graphic Illustration Background Design`;
+    if (fullTitle.length > 150) {
+        let cut = fullTitle.substring(0, 150);
+        const spaceIdx = cut.lastIndexOf(' ');
+        if (spaceIdx > 60) cut = cut.substring(0, spaceIdx);
+        fullTitle = cut.replace(/[\s,.-]+$/, '').trim();
+    }
+
+    const desc = `High quality stock illustration featuring ${baseTitle.toLowerCase()} in high resolution digital rendering suitable for commercial and creative projects.`;
     
     const baseWords = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     const standardStockTerms = [
@@ -375,7 +383,7 @@ function generateFallbackMetadata(textPrompt) {
             {
                 message: {
                     content: JSON.stringify({
-                        title: title,
+                        title: fullTitle,
                         description: desc,
                         keywords: finalKeywordsList
                     })

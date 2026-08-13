@@ -551,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         resultsList.innerHTML = '';
 
-        const currentModelValue = modelSelect ? modelSelect.value : 'qwen/qwen3.6-27b';
+        const currentModelValue = modelSelect ? modelSelect.value : 'gemini-2.0-flash';
 
         // --- Helper: process a single file with a given API key ---
         async function processFile(fileObj, apiKey) {
@@ -563,16 +563,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const { b64, mimeType } = await compressImageToBase64(fileObj.file);
 
             const targetKeywordsCount = parseInt(keywordsCountValue ? keywordsCountValue.textContent : '45', 10) || 45;
-            const targetTitleLength = parseInt(titleLengthValue ? titleLengthValue.textContent : '150', 10) || 150;
+            const targetTitleLength = Math.min(parseInt(titleLengthValue ? titleLengthValue.textContent : '150', 10) || 150, 150);
             const targetDescLength = parseInt(descriptionLengthValue ? descriptionLengthValue.textContent : '150', 10) || 150;
 
             const prompt = `You are an elite, highly experienced stock agency metadata generator (Adobe Stock, Shutterstock, Freepik, Getty Images).
-Analyze the provided image in full detail and generate top-performing SEO stock metadata.
+Analyze the provided image in full visual detail and generate top-performing SEO stock metadata based on what is visible in the image.
 Image Filename / Topic Hint: "${fileObj.name}"
 
 STRICT RULES:
-1. Title: Must be a complete, highly descriptive SEO title of around ${targetTitleLength} characters. Make it descriptive and natural without any ellipsis (...) or cut-off sentences.
-2. Description: Detailed description around ${targetDescLength} characters.
+1. Title: Must be a complete, highly descriptive SEO title generated strictly by visually inspecting the image content. The title MUST BE AT MOST 150 CHARACTERS LONG (uparima 150 letters). Target length: 110 to 150 characters. DO NOT exceed 150 characters under any circumstances. DO NOT use ellipsis (...) or cut-off sentences.
+2. Description: Detailed description around ${targetDescLength} characters based on visual analysis.
 3. Keywords: You MUST generate EXACTLY ${targetKeywordsCount} unique, highly relevant, comma-separated keywords. Cover subject, visual style, mood, concept, lighting, composition, and technical elements. Do NOT stop early. Do NOT use single quotes.
 4. Include these required keywords: "${includeKeywords.value}".
 5. Exclude these banned keywords: "${excludeKeywords.value}".
@@ -655,21 +655,39 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     .trim();
 
                 const titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                let fallbackTitle = titleCase ? `${titleCase} - High Quality Digital Graphic Illustration Background Design` : "Stock Photo Creative Digital Background Illustration Design";
+                if (fallbackTitle.length > 150) {
+                    let cut = fallbackTitle.substring(0, 150);
+                    const spaceIdx = cut.lastIndexOf(' ');
+                    if (spaceIdx > 60) cut = cut.substring(0, spaceIdx);
+                    fallbackTitle = cut.replace(/[\s,.-]+$/, '').trim();
+                }
                 
                 parsedResult = {
-                    title: titleCase ? `${titleCase} Stock Illustration` : "Stock Photo Creative Design",
+                    title: fallbackTitle,
                     description: `High quality stock illustration featuring ${titleCase || "creative design"} in high resolution digital rendering for commercial use.`,
                     keywords: ""
                 };
             }
 
             // --- Post-Processing & Verification ---
-            // 1. Clean Title: strip trailing ellipsis, incomplete quotes or dots
+            // 1. Clean Title: strip trailing ellipsis, incomplete quotes or dots and enforce MAX 150 characters
             if (parsedResult.title) {
-                parsedResult.title = parsedResult.title
+                let cleanTitle = parsedResult.title
                     .replace(/[…\.]+$|\s*\.\.\.$/g, '')
                     .replace(/\s+/g, ' ')
                     .trim();
+
+                const MAX_TITLE_LEN = 150;
+                if (cleanTitle.length > MAX_TITLE_LEN) {
+                    let truncated = cleanTitle.substring(0, MAX_TITLE_LEN);
+                    const lastSpace = truncated.lastIndexOf(' ');
+                    if (lastSpace > 60) {
+                        truncated = truncated.substring(0, lastSpace);
+                    }
+                    cleanTitle = truncated.replace(/[\s,.-]+$/, '').trim();
+                }
+                parsedResult.title = cleanTitle;
             }
 
             // 2. Keywords Verification & Auto-Padding to guarantee exact count (e.g. 45 keywords)
@@ -716,7 +734,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 
             if (filenameAsTitle.checked) {
                 const nameWithoutExt = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
-                parsedResult.title = nameWithoutExt;
+                parsedResult.title = nameWithoutExt.substring(0, 150);
             }
 
             return parsedResult;
