@@ -376,7 +376,14 @@ function generateFallbackMetadata(textPrompt) {
 }
 
 async function executeVisionPipeline({ apiKey, model, messages, temperature, textPrompt, mimeType, base64Data }) {
-    let poolKeys = [];
+    let keysToTry = [];
+
+    // 1. Always prioritize the user-provided API key for this request first
+    if (apiKey && apiKey !== "DesignInk_Internal" && typeof apiKey === "string" && apiKey.trim().length > 5) {
+        keysToTry.push({ id: 'user_provided', key: apiKey.trim() });
+    }
+
+    // 2. Fetch active keys from Firestore pool as secondary failover options
     try {
         const db = admin.firestore();
         const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
@@ -384,57 +391,51 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
         keysSnap.forEach(doc => {
             const data = doc.data();
-            if (data.status === 'active') {
-                poolKeys.push({ id: doc.id, key: data.api_key || data.key });
-            } else if (data.status === 'cooldown' && data.cooldownUntil && data.cooldownUntil < now) {
-                poolKeys.push({ id: doc.id, key: data.api_key || data.key });
+            const poolKey = (data.api_key || data.key || "").trim();
+            if (poolKey && !keysToTry.some(k => k.key === poolKey)) {
+                if (data.status === 'active' || (data.cooldownUntil && data.cooldownUntil < now)) {
+                    keysToTry.push({ id: doc.id, key: poolKey });
+                }
             }
         });
     } catch(e) {}
 
-    if (apiKey && apiKey !== "DesignInk_Internal") {
-        const isDuplicate = poolKeys.some(pk => pk.key === apiKey);
-        if (!isDuplicate) {
-            poolKeys.unshift({ id: 'user_provided', key: apiKey });
+    if (keysToTry.length === 0) {
+        return { ok: false, error: "No API keys provided or available. Please add a Gemini (AIza...), OpenRouter (sk-or-...), Groq (gsk_...), or GitHub (ghp_...) API key.", status: 400 };
+    }
+
+    let lastErrorMessage = "";
+
+    for (const keyObj of keysToTry) {
+        const trimmedKey = keyObj.key;
+        if (!trimmedKey) continue;
+
+        let result;
+        if (trimmedKey.startsWith("AIza")) {
+            result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
+        } else if (trimmedKey.startsWith("sk-or-")) {
+            result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
+        } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
+            result = await callGitHubModels(trimmedKey, messages, temperature);
+        } else {
+            result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
+        }
+
+        if (result.ok) {
+            return { ok: true, data: result.data, keyId: keyObj.id };
+        }
+
+        lastErrorMessage = result.error || lastErrorMessage;
+
+        if (result.status === 401 && keyObj.id !== 'user_provided') {
+            try {
+                const db = admin.firestore();
+                await db.collection('api_keys_pool').doc(keyObj.id).update({ status: 'invalid' });
+            } catch(e) {}
         }
     }
 
-    if (poolKeys.length > 0) {
-        let attempts = 0;
-        const maxTotalAttempts = Math.min(poolKeys.length * 2, 10);
-
-        while (attempts < maxTotalAttempts) {
-            let selectedKeyObj = poolKeys[currentKeyIndex % poolKeys.length];
-            currentKeyIndex++;
-            const trimmedKey = selectedKeyObj.key ? selectedKeyObj.key.trim() : "";
-
-            let result;
-            if (trimmedKey.startsWith("AIza")) {
-                result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
-            } else if (trimmedKey.startsWith("sk-or-")) {
-                result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
-            } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
-                result = await callGitHubModels(trimmedKey, messages, temperature);
-            } else {
-                result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
-            }
-
-            if (result.ok) {
-                return { ok: true, data: result.data, keyId: selectedKeyObj.id };
-            }
-
-            if (result.status === 401 && selectedKeyObj.id !== 'user_provided') {
-                try {
-                    const db = admin.firestore();
-                    await db.collection('api_keys_pool').doc(selectedKeyObj.id).update({ status: 'invalid' });
-                } catch(e) {}
-            }
-
-            attempts++;
-        }
-    }
-
-    return { ok: false, error: "All provided API keys or Vision AI models failed. Please verify your API keys (Gemini, Groq, OpenRouter, or GitHub PAT).", status: 400 };
+    return { ok: false, error: `Vision AI generation failed: ${lastErrorMessage || "Please verify your API key status or rate limits."}`, status: 400 };
 }
 
 const handleGroqProxy = async (req, res) => {
