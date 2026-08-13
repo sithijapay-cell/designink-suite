@@ -669,9 +669,9 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                 }
             }
 
-            // Helper function to sanitize, complete and enrich short/half titles (e.g., "Peach Background Glowing With Wa")
-            function sanitizeAndEnrichTitle(rawTitle, targetMaxLen = 150) {
-                if (!rawTitle) return "Creative Digital Background Vector Graphic Illustration Design";
+            // Helper function to sanitize AI-generated titles without adding static boilerplate
+            function sanitizeTitle(rawTitle, targetMaxLen = 150) {
+                if (!rawTitle) return "";
 
                 // 1. Remove ellipsis, trailing dots, quotes, and artificial hyphenated suffixes
                 let title = String(rawTitle)
@@ -680,31 +680,12 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     .replace(/\s+/g, ' ')
                     .trim();
 
-                // 2. Strip trailing cut-off words (like "Wa", "With", "And", "Of", "In", "At", "To", "For", "On", "The", "A", "An", "Or")
-                // Loop to clean multi-word cut-offs like "with wa"
-                for (let i = 0; i < 3; i++) {
-                    title = title.replace(/\s+(?:with|and|or|of|in|on|at|to|for|the|a|an|[a-z]{1,3})$/i, '').trim();
+                // 2. Strip trailing cut-off words/prepositions if string ends abruptly (e.g. "with wa")
+                for (let i = 0; i < 2; i++) {
+                    title = title.replace(/\s+(?:with|and|or|of|in|on|at|to|for|the|a|an|[a-z]{1,2})$/i, '').trim();
                 }
 
-                // 3. If title is short (under 85 characters), dynamically enrich it into a complete, rich SEO stock title
-                if (title.length < 85) {
-                    const lower = title.toLowerCase();
-                    const additions = [];
-                    if (!lower.includes("abstract") && !lower.includes("modern") && !lower.includes("creative")) additions.push("Abstract Digital Graphic");
-                    if (!lower.includes("rendering") && !lower.includes("illustration") && !lower.includes("vector")) additions.push("Vector Illustration Design");
-                    if (!lower.includes("background") && !lower.includes("backdrop") && !lower.includes("wallpaper")) additions.push("Background Backdrop");
-                    if (!lower.includes("banner") && !lower.includes("presentation") && !lower.includes("commercial")) additions.push("for Commercial Presentation Banner");
-
-                    let enriched = title;
-                    for (const add of additions) {
-                        if ((enriched + " " + add).length <= targetMaxLen) {
-                            enriched += " " + add;
-                        }
-                    }
-                    title = enriched;
-                }
-
-                // 4. Strict Cap at targetMaxLen (150 chars max), breaking on last full word
+                // 3. Strict Cap at targetMaxLen (150 chars max), breaking on last full word
                 if (title.length > targetMaxLen) {
                     let cut = title.substring(0, targetMaxLen);
                     const spaceIdx = cut.lastIndexOf(' ');
@@ -728,7 +709,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     .trim();
 
                 let titleCase = formattedName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                const fallbackTitle = sanitizeAndEnrichTitle(titleCase, 150);
+                const fallbackTitle = sanitizeTitle(titleCase, 150) || "Creative Digital Graphic Illustration";
                 
                 parsedResult = {
                     title: fallbackTitle,
@@ -738,9 +719,9 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
 
             // --- Post-Processing & Verification ---
-            // 1. Clean & Enrich Title: eliminate half-titles, cut-off words, and enforce MAX 150 chars
+            // 1. Clean Title: keep pure AI Vision title, strip ellipsis & cut-offs, cap at 150 chars
             if (parsedResult.title) {
-                parsedResult.title = sanitizeAndEnrichTitle(parsedResult.title, 150);
+                parsedResult.title = sanitizeTitle(parsedResult.title, 150);
             }
 
             // 2. Keywords Verification & Auto-Padding to guarantee exact count (e.g. 45 keywords)
