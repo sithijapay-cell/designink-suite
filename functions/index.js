@@ -102,10 +102,11 @@ function parseUserMessagePayload(messages) {
 
 async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature) {
     const models = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-2.0-flash-lite"
+        "gemini-1.5-pro"
     ];
     let lastErr = null;
 
@@ -208,23 +209,17 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
 }
 
 async function callGroqWithFallback(apiKey, messages, temperature, requestedModel) {
+    // Pass full messages array (including image_url) unchanged to Groq without text stripping hacks.
     const activeGroqModels = [
+        "llama-3.2-11b-vision-instruct",
+        "llama-3.2-90b-vision-preview",
         "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768"
+        "llama-3.1-8b-instant"
     ];
 
     if (requestedModel && !activeGroqModels.includes(requestedModel) && !requestedModel.includes('/')) {
         activeGroqModels.unshift(requestedModel);
     }
-
-    const textOnlyMessages = messages.map(msg => {
-        if (Array.isArray(msg.content)) {
-            const textParts = msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
-            return { role: msg.role, content: textParts || "Generate accurate stock metadata." };
-        }
-        return msg;
-    });
 
     let lastErr = null;
     let lastStatus = 500;
@@ -239,7 +234,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                 },
                 body: JSON.stringify({
                     model,
-                    messages: textOnlyMessages,
+                    messages,
                     temperature: temperature ?? 0.4,
                     max_tokens: 2048,
                     response_format: { type: "json_object" }
@@ -251,7 +246,6 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                 let content = data.choices[0].message.content;
                 content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
                 data.choices[0].message.content = content;
-                data.isLowConfidence = true;
                 return { ok: true, data };
             }
             lastStatus = res.status;

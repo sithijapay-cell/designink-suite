@@ -695,8 +695,8 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     }
                 }
             }
-
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
+                fileObj.isFallbackData = true;
                 const nameWithoutExt = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
                 const cleanTitleWords = nameWithoutExt.replace(/_\d+K|\d{8,}/gi, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
                 const formattedTitle = cleanTitleWords ? cleanTitleWords.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : "Creative Digital Graphic Illustration";
@@ -746,26 +746,25 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 
             // Add title words as keywords if needed
             if (parsedResult.title) {
-                const titleWords = parsedResult.title.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+                const titleWords = parsedResult.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
                 titleWords.forEach(w => combinedSet.add(w));
             }
 
-            // Pool of high-performing stock keywords to pad up to target count (e.g. 45)
-            const stockPaddingPool = [
+            const standardStockTerms = [
                 'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality',
-                'vector', 'concept', 'modern', 'wallpaper', 'creative', 'element', 'banner', 'pattern', 'texture', 'symbol',
+                'concept', 'modern', 'wallpaper', 'creative', 'element', 'banner', 'pattern', 'texture', 'symbol',
                 'abstract', 'artistic', 'backdrop', 'decor', 'decorative', 'style', 'color', 'bright', 'vibrant', 'light',
                 'render', '3d', 'template', 'presentation', 'business', 'marketing', 'commercial', 'media', 'creative art',
-                'digital creation', 'sharp details', 'high resolution', 'stock graphic', 'visual', 'artwork', 'trendy design',
-                'contemporary', 'studio shot', 'no people', 'copyspace', 'blank space', 'professional', 'composition'
+                'digital creation', 'sharp details', 'high resolution', 'stock graphic', 'visual', 'artwork'
             ];
 
-            stockPaddingPool.forEach(term => combinedSet.add(term));
+            standardStockTerms.forEach(term => {
+                if (combinedSet.size < targetKeywordsCount) {
+                    combinedSet.add(term);
+                }
+            });
 
-            let finalKwList = Array.from(combinedSet).filter(Boolean);
-            if (finalKwList.length > targetKeywordsCount) {
-                finalKwList = finalKwList.slice(0, targetKeywordsCount);
-            }
+            const finalKwList = Array.from(combinedSet).slice(0, Math.max(targetKeywordsCount, 45));
 
             parsedResult.keywords = finalKwList.join(', ');
 
@@ -778,11 +777,9 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
         }
 
         // --- Parallel Worker Queue ---
-        // Each API key runs as its own independent worker.
-        // Workers pull from the shared queue until it's empty.
         async function runWorker(apiKey) {
             while (queue.length > 0 && !stopGeneration) {
-                const fileObj = queue.shift(); // grab next file atomically
+                const fileObj = queue.shift();
                 if (!fileObj) break;
 
                 let success = false;
@@ -800,11 +797,10 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                         fileObj.result = result;
                         fileObj.status = 'success';
                         addResultToUI(fileObj);
-                        saveResultToDB(fileObj); // Auto-Save metadata result to IndexedDB immediately
+                        saveResultToDB(fileObj);
                         incrementStat('filesProcessed', 1);
                         success = true;
 
-                        // Cooldown per successful request (1 second) to maintain high performance
                         if (queue.length > 0 && !stopGeneration) {
                             await new Promise(r => setTimeout(r, 1000));
                         }
@@ -844,7 +840,6 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
         }
 
-        // Launch all workers in parallel and wait for all to finish
         const activeWorkerKeys = (apiKeys && apiKeys.length > 0) ? apiKeys : ["DesignInk_Internal"];
         await Promise.all(activeWorkerKeys.map(key => runWorker(key)));
 
@@ -869,40 +864,60 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
         currentFileName.textContent = 'Stopped.';
     });
     
-    uploadNewBtn?.addEventListener('click', () => {
-        // Just scroll to top
-        window.scrollTo({top: 0, behavior: 'smooth'});
-    });
     
     function addResultToUI(fileObj) {
+        if (!resultsList) return;
+
+        const existingCard = document.getElementById(`result-card-${fileObj.id}`);
+        if (existingCard) existingCard.remove();
+
         const item = document.createElement('div');
+        item.id = `result-card-${fileObj.id}`;
         item.className = 'metadata-gen-result-card';
-        item.style.border = '1px solid #e2e8f0';
+        item.style.border = fileObj.isFallbackData ? '1px solid #f59e0b' : '1px solid #e2e8f0';
         item.style.padding = '15px';
         item.style.marginBottom = '15px';
         item.style.borderRadius = '8px';
         item.style.display = 'flex';
         item.style.gap = '15px';
+        item.style.background = fileObj.isFallbackData ? '#fffbe6' : '#ffffff';
+
+        const warningBadge = fileObj.isFallbackData 
+            ? `<div style="background:#fef3c7; color:#92400e; padding:4px 10px; border-radius:4px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:6px; margin-bottom:6px;">
+                 <i class="fas fa-exclamation-triangle"></i> ⚠ Placeholder — AI parsing failed, retry
+                 <button class="retry-single-btn" data-id="${fileObj.id}" style="background:#d97706; color:#fff; border:none; padding:2px 8px; border-radius:3px; font-size:11px; cursor:pointer; margin-left:8px;">Retry This File</button>
+               </div>`
+            : '';
         
         item.innerHTML = `
             <img src="${fileObj.url}" style="width:120px; height:120px; object-fit:cover; border-radius:6px; flex-shrink:0;">
-            <div style="flex-grow:1; display:flex; flex-direction:column; gap:10px;">
+            <div style="flex-grow:1; display:flex; flex-direction:column; gap:8px;">
+                ${warningBadge}
                 <div><strong>Filename:</strong> ${fileObj.name}</div>
                 <div>
                     <strong>Title:</strong>
-                    <input type="text" value="${fileObj.result.title || ''}" class="metadata-gen-clean-input" style="width:100%; margin-top:5px;" readonly>
+                    <input type="text" value="${fileObj.result.title || ''}" class="metadata-gen-clean-input" style="width:100%; margin-top:3px;" readonly>
                 </div>
                 <div>
                     <strong>Description:</strong>
-                    <textarea class="metadata-gen-clean-input" style="width:100%; margin-top:5px; resize:vertical; min-height:60px;" readonly>${(Array.isArray(fileObj.result.description) ? fileObj.result.description.join(', ') : fileObj.result.description) || ''}</textarea>
+                    <textarea class="metadata-gen-clean-input" style="width:100%; margin-top:3px; resize:vertical; min-height:50px;" readonly>${(Array.isArray(fileObj.result.description) ? fileObj.result.description.join(', ') : fileObj.result.description) || ''}</textarea>
                 </div>
                 <div>
                     <strong>Keywords:</strong>
-                    <textarea class="metadata-gen-clean-input" style="width:100%; margin-top:5px; resize:vertical; min-height:60px;" readonly>${(Array.isArray(fileObj.result.keywords) ? fileObj.result.keywords.join(', ') : fileObj.result.keywords) || ''}</textarea>
+                    <textarea class="metadata-gen-clean-input" style="width:100%; margin-top:3px; resize:vertical; min-height:50px;" readonly>${(Array.isArray(fileObj.result.keywords) ? fileObj.result.keywords.join(', ') : fileObj.result.keywords) || ''}</textarea>
                 </div>
             </div>
         `;
         resultsList.appendChild(item);
+
+        const retryBtn = item.querySelector('.retry-single-btn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', async () => {
+                fileObj.status = 'pending';
+                fileObj.isFallbackData = false;
+                startMetadataGeneration();
+            });
+        }
     }
     
     // --- Improved CSV Export with Platform Support ---
