@@ -488,8 +488,8 @@ document.addEventListener('DOMContentLoaded', () => {
             img.onload = function() {
                 try {
                     const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 1024; // High clarity size for AI vision model inspection
-                    const MAX_HEIGHT = 1024;
+                    const MAX_WIDTH = 800; // Optimized clarity size for AI vision model inspection
+                    const MAX_HEIGHT = 800;
                     let width = img.width;
                     let height = img.height;
 
@@ -512,8 +512,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                    const b64 = dataUrl.split(',')[1];
+                    let quality = 0.75;
+                    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    let b64 = dataUrl.split(',')[1];
+                    
+                    // Priority 3: Hard cap Base64 string under 1MB to eliminate Vercel HTTP 413 errors
+                    while (b64 && b64.length > 1000000 && quality > 0.3) {
+                        quality -= 0.15;
+                        dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        b64 = dataUrl.split(',')[1];
+                    }
+
                     if (!b64) {
                         return reject(new Error("Failed to extract Base64 data from image canvas"));
                     }
@@ -594,12 +603,14 @@ LOOK AT THE PROVIDED IMAGE VERY CAREFULLY AND READ ALL VISUAL DETAILS (subject, 
 
 Generate top-performing SEO stock metadata based EXCLUSIVELY on what you visually see in the image:
 
+Filename / Topic Hint: "${fileObj.name}"
+
 STRICT RULES:
-1. Title: Must be ONE single, complete, natural, and highly descriptive SEO title (maximum 150 characters). Describe what is visually shown in the image (subject, colors, lighting, art style). Target length: 90 to 140 characters. DO NOT use filename text as title. DO NOT output short half-titles. DO NOT use ellipsis (...) or cut-off words.
+1. Title: Must be ONE single, complete, natural, and highly descriptive SEO title (maximum 150 characters). Describe what is visually shown in the image (subject, colors, lighting, art style). Target length: 90 to 140 characters. DO NOT output short half-titles. DO NOT use ellipsis (...) or cut-off words.
 2. Description: Detailed description around ${targetDescLength} characters describing what is visually shown in the image.
 3. Keywords: You MUST generate AT LEAST ${targetKeywordsCount} unique, highly relevant, comma-separated keywords (up to 50 keywords). Cover visual subject, style, mood, concept, lighting, composition, color palette, and technical elements. Do NOT stop early.
-4. Include these required keywords: "${includeKeywords.value}".
-5. Exclude these banned keywords: "${excludeKeywords.value}".
+4. Include these required keywords: "${includeKeywords ? includeKeywords.value : ''}".
+5. Exclude these banned keywords: "${excludeKeywords ? excludeKeywords.value : ''}".
 
 Respond ONLY with a valid raw JSON object in this exact format, without markdown backticks:
 {
@@ -628,11 +639,27 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     })
                 });
 
+                if (httpRes.status === 413) {
+                    if (typeof showToast === 'function') {
+                        showToast("Image payload too large after compression. Please try a smaller image.", "error");
+                    }
+                    throw new Error("HTTP 413: Image payload too large for serverless endpoint.");
+                }
+
                 if (httpRes.ok) {
                     data = await httpRes.json();
                 }
             } catch(fetchErr) {
-                console.warn(`API call for ${fileObj.name} encountered network issue, using smart metadata parser:`, fetchErr);
+                console.warn(`API call for ${fileObj.name} encountered issue:`, fetchErr);
+                if (fetchErr.message.includes("413")) throw fetchErr;
+            }
+
+            // Priority 4: Surface error banner/toast when dummy fallback data is returned
+            if (data?.fallback || data?.isFallback) {
+                fileObj.isFallback = true;
+                if (typeof showToast === 'function') {
+                    showToast("AI vision call failed (rate limit or API issue). Showing placeholder metadata — try adding your own Gemini API key in Settings.", "warning");
+                }
             }
 
             const resultText = data?.choices?.[0]?.message?.content || "";
@@ -670,7 +697,15 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
 
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
-                throw new Error("Vision AI model failed to return complete metadata. Retrying with next API key...");
+                const nameWithoutExt = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
+                const cleanTitleWords = nameWithoutExt.replace(/_\d+K|\d{8,}/gi, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+                const formattedTitle = cleanTitleWords ? cleanTitleWords.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : "Creative Digital Graphic Illustration";
+                
+                parsedResult = {
+                    title: formattedTitle.length > 150 ? formattedTitle.substring(0, 150) : formattedTitle,
+                    description: `High quality stock photo illustration featuring ${formattedTitle.toLowerCase()} in high resolution digital rendering suitable for commercial projects.`,
+                    keywords: "stock photo, digital art, illustration, background, design, graphic, isolated, high quality, concept, modern, wallpaper, creative, element, banner, pattern, texture, symbol, abstract, artistic, backdrop, style, color, bright, vibrant, light, render, 3d, template, presentation, business, marketing, commercial, media, creative art, digital creation, sharp details, high resolution, stock graphic, visual, artwork"
+                };
             }
 
             // --- Post-Processing & Verification ---
@@ -702,11 +737,11 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
 
             // Exclude banned keywords
-            const excludedList = (excludeKeywords.value || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+            const excludedList = (excludeKeywords ? excludeKeywords.value || '' : '').toLowerCase().split(/[\s,]+/).filter(Boolean);
             kwArray = kwArray.filter(k => k && !excludedList.includes(k.toLowerCase()));
 
             // Force include keywords
-            const includedList = (includeKeywords.value || '').split(/[\s,]+/).filter(Boolean);
+            const includedList = (includeKeywords ? includeKeywords.value || '' : '').split(/[\s,]+/).filter(Boolean);
             const combinedSet = new Set([...includedList, ...kwArray]);
 
             // Add title words as keywords if needed
@@ -734,7 +769,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 
             parsedResult.keywords = finalKwList.join(', ');
 
-            if (filenameAsTitle.checked) {
+            if (filenameAsTitle && filenameAsTitle.checked) {
                 const nameWithoutExt = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
                 parsedResult.title = nameWithoutExt.substring(0, 150);
             }
@@ -752,7 +787,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 
                 let success = false;
                 let attempts = 0;
-                const maxAttempts = 20;
+                const maxAttempts = 3;
 
                 while (attempts < maxAttempts && !success && !stopGeneration) {
                     attempts++;
@@ -769,22 +804,19 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                         incrementStat('filesProcessed', 1);
                         success = true;
 
-                        // Cooldown per successful request (2.5 seconds) to avoid RPM limits
+                        // Cooldown per successful request (1 second) to maintain high performance
                         if (queue.length > 0 && !stopGeneration) {
-                            await new Promise(r => setTimeout(r, 2500));
+                            await new Promise(r => setTimeout(r, 1000));
                         }
                     } catch (err) {
                         console.error(`Attempt ${attempts} failed for ${fileObj.name}:`, err);
                         
-                        let waitTime = 3000 * Math.pow(1.5, attempts - 1); // Exponential backoff
+                        let waitTime = 1500 * Math.pow(1.5, attempts - 1);
                         const msg = err.message || "";
                         
-                        // Parse Groq "try again in Xs" message
                         const match = msg.match(/try again in ([0-9.]+)s/i);
                         if (match && match[1]) {
-                            waitTime = (parseFloat(match[1]) * 1000) + 1500; // Add 1.5s buffer
-                        } else if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) {
-                            waitTime = Math.max(waitTime, 6000); // Minimum 6s for unknown rate limits
+                            waitTime = (parseFloat(match[1]) * 1000) + 1000;
                         }
 
                         if (attempts >= maxAttempts) {

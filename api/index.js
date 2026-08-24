@@ -106,14 +106,18 @@ function parseUserMessagePayload(messages) {
     return { textPrompt, mimeType, base64Data };
 }
 
-async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature) {
+async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature, requestedModel) {
+    // Primary Vision Provider: Gemini 2.0 Flash / 1.5 Flash (Production non-experimental models)
     const models = [
         "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
         "gemini-1.5-flash",
         "gemini-1.5-pro",
-        "gemini-2.0-flash-exp"
+        "gemini-2.0-flash-lite"
     ];
+    if (requestedModel && models.includes(requestedModel)) {
+        models.splice(models.indexOf(requestedModel), 1);
+        models.unshift(requestedModel);
+    }
     let lastErr = null;
 
     for (const model of models) {
@@ -132,7 +136,7 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                     }],
                     generationConfig: {
                         responseMimeType: "application/json",
-                        temperature: temperature ?? 0.5,
+                        temperature: temperature ?? 0.4,
                         maxOutputTokens: 2048
                     }
                 })
@@ -140,7 +144,9 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
 
             const data = await res.json();
             if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                const generatedContent = data.candidates[0].content.parts[0].text;
+                let generatedContent = data.candidates[0].content.parts[0].text;
+                // Backend safety net: strip stray markdown code fences before returning
+                generatedContent = generatedContent.replace(/```json/gi, '').replace(/```/g, '').trim();
                 return {
                     ok: true,
                     data: {
@@ -161,17 +167,22 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
     return { ok: false, error: lastErr, status: 400 };
 }
 
-async function callOpenRouterWithFallback(apiKey, messages, temperature) {
+async function callOpenRouterWithFallback(apiKey, messages, temperature, requestedModel) {
     const freeModels = [
         "google/gemini-2.0-flash-001",
         "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "google/gemini-2.0-flash-exp:free",
         "meta-llama/llama-3.2-11b-vision-instruct:free",
         "qwen/qwen-2.5-vl-72b-instruct:free",
         "qwen/qwen-2-vl-72b-instruct:free",
         "openai/gpt-4o-mini",
         "anthropic/claude-3.5-sonnet"
     ];
+    if (requestedModel && !freeModels.includes(requestedModel)) {
+        freeModels.unshift(requestedModel);
+    } else if (requestedModel && freeModels.includes(requestedModel)) {
+        freeModels.splice(freeModels.indexOf(requestedModel), 1);
+        freeModels.unshift(requestedModel);
+    }
 
     let lastErr = null;
     let lastStatus = 404;
@@ -188,7 +199,7 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
                 body: JSON.stringify({
                     model,
                     messages,
-                    temperature: temperature ?? 0.5,
+                    temperature: temperature ?? 0.4,
                     max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
@@ -196,6 +207,9 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
+                let content = data.choices[0].message.content;
+                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                data.choices[0].message.content = content;
                 return { ok: true, data };
             }
             lastStatus = res.status;
@@ -212,6 +226,9 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
 }
 
 async function callGroqWithFallback(apiKey, messages, temperature, requestedModel) {
+    // Note: Groq hosted endpoints (api.groq.com) are currently text-only LLMs (Llama 3.3, 3.1).
+    // They cannot inspect visual base64 image data. When Groq is called, we process prompt text
+    // and explicitly tag the response as low-confidence.
     const activeGroqModels = [
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
@@ -252,6 +269,10 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
+                let content = data.choices[0].message.content;
+                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                data.choices[0].message.content = content;
+                data.isLowConfidence = true;
                 return { ok: true, data };
             }
             lastStatus = res.status;
@@ -267,13 +288,17 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
     return { ok: false, error: lastErr, status: lastStatus };
 }
 
-async function callGitHubModels(apiKey, messages, temperature) {
+async function callGitHubModels(apiKey, messages, temperature, requestedModel) {
     const models = [
         "gpt-4o-mini",
         "gpt-4o",
         "meta-llama-3.1-70b-instruct",
         "Llama-3.2-11B-Vision-Instruct"
     ];
+    if (requestedModel && models.includes(requestedModel)) {
+        models.splice(models.indexOf(requestedModel), 1);
+        models.unshift(requestedModel);
+    }
     let lastErr = null;
 
     for (const model of models) {
@@ -287,7 +312,7 @@ async function callGitHubModels(apiKey, messages, temperature) {
                 body: JSON.stringify({
                     model,
                     messages,
-                    temperature: temperature ?? 0.5,
+                    temperature: temperature ?? 0.4,
                     max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
@@ -295,6 +320,9 @@ async function callGitHubModels(apiKey, messages, temperature) {
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
+                let content = data.choices[0].message.content;
+                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                data.choices[0].message.content = content;
                 return { ok: true, data };
             }
             lastErr = data.error?.message || `GitHub Models ${model} ${res.status}`;
@@ -307,6 +335,44 @@ async function callGitHubModels(apiKey, messages, temperature) {
     }
 
     return { ok: false, error: lastErr, status: 500 };
+}
+
+async function callMoondream(textPrompt, base64Data) {
+    if (!base64Data) return { ok: false, error: "No base64 image data for Moondream" };
+    const moondreamUrl = process.env.MOONDREAM_API_URL || "https://vikhyat-moondream2.hf.space/generate";
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+        const res = await fetch(moondreamUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageBase64: base64Data }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === "success" && data.metadata) {
+                return {
+                    ok: true,
+                    data: {
+                        choices: [{
+                            message: {
+                                content: JSON.stringify({
+                                    title: data.metadata.title || "Creative Visual Stock Illustration",
+                                    description: data.metadata.description || "High quality stock photo illustration.",
+                                    keywords: data.metadata.keywords || (data.metadata.tags ? data.metadata.tags.join(", ") : "")
+                                })
+                            }
+                        }]
+                    }
+                };
+            }
+        }
+    } catch (e) {
+        console.warn("Moondream ZeroGPU backup call failed or timed out:", e.message);
+    }
+    return { ok: false, error: "Moondream backup unavailable" };
 }
 
 function sanitizeTitle(rawTitle, targetMaxLen = 150) {
@@ -408,10 +474,6 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         });
     } catch(e) {}
 
-    if (keysToTry.length === 0) {
-        return { ok: false, error: "No API keys provided or available. Please add a Gemini (AIza...), OpenRouter (sk-or-...), Groq (gsk_...), or GitHub (ghp_...) API key.", status: 400 };
-    }
-
     let lastErrorMessage = "";
 
     for (const keyObj of keysToTry) {
@@ -420,11 +482,11 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
         let result;
         if (trimmedKey.startsWith("AIza")) {
-            result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
+            result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature, model);
         } else if (trimmedKey.startsWith("sk-or-")) {
-            result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
+            result = await callOpenRouterWithFallback(trimmedKey, messages, temperature, model);
         } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
-            result = await callGitHubModels(trimmedKey, messages, temperature);
+            result = await callGitHubModels(trimmedKey, messages, temperature, model);
         } else {
             result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
         }
@@ -443,7 +505,23 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    return { ok: false, error: `Vision AI generation failed: ${lastErrorMessage || "Please verify your API key status or rate limits."}`, status: 400 };
+    // 3. Backup Vision Attempt: Moondream2 ZeroGPU microservice before dummy fallback
+    if (base64Data) {
+        const moondreamRes = await callMoondream(textPrompt, base64Data);
+        if (moondreamRes.ok) {
+            return { ok: true, data: moondreamRes.data, isMoondream: true };
+        }
+    }
+
+    // 4. Hardcoded Fallback generation if no Vision AI call succeeded — Tagged explicitly as fallback
+    return {
+        ok: true,
+        data: generateFallbackMetadata(textPrompt),
+        fallback: true,
+        isFallback: true,
+        errorType: "ALL_PROVIDERS_FAILED",
+        details: lastErrorMessage || "All vision AI providers failed"
+    };
 }
 
 const handleGroqProxy = async (req, res) => {
@@ -562,5 +640,14 @@ app.post("/api/saveGroqApiKey", async (req, res) => {
         return res.json(req.body?.data ? { result: { success: false, error: e.message } } : { success: false, error: e.message });
     }
 });
+
+if (require.main === module) {
+    const path = require("path");
+    const PORT = process.env.PORT || 3000;
+    app.use(express.static(path.join(__dirname, "../public")));
+    app.listen(PORT, () => {
+        console.log(`DesignInk Creative Suite server running on http://localhost:${PORT}`);
+    });
+}
 
 module.exports = app;

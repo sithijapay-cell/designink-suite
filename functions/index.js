@@ -103,10 +103,9 @@ function parseUserMessagePayload(messages) {
 async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature) {
     const models = [
         "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
         "gemini-1.5-flash",
         "gemini-1.5-pro",
-        "gemini-2.0-flash-exp"
+        "gemini-2.0-flash-lite"
     ];
     let lastErr = null;
 
@@ -126,7 +125,7 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                     }],
                     generationConfig: {
                         responseMimeType: "application/json",
-                        temperature: temperature ?? 0.5,
+                        temperature: temperature ?? 0.4,
                         maxOutputTokens: 2048
                     }
                 })
@@ -134,7 +133,8 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
 
             const data = await res.json();
             if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                const generatedContent = data.candidates[0].content.parts[0].text;
+                let generatedContent = data.candidates[0].content.parts[0].text;
+                generatedContent = generatedContent.replace(/```json/gi, '').replace(/```/g, '').trim();
                 return {
                     ok: true,
                     data: {
@@ -159,7 +159,6 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
     const freeModels = [
         "google/gemini-2.0-flash-001",
         "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "google/gemini-2.0-flash-exp:free",
         "meta-llama/llama-3.2-11b-vision-instruct:free",
         "qwen/qwen-2.5-vl-72b-instruct:free",
         "qwen/qwen-2-vl-72b-instruct:free",
@@ -182,7 +181,7 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
                 body: JSON.stringify({
                     model,
                     messages,
-                    temperature: temperature ?? 0.5,
+                    temperature: temperature ?? 0.4,
                     max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
@@ -190,6 +189,9 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
+                let content = data.choices[0].message.content;
+                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                data.choices[0].message.content = content;
                 return { ok: true, data };
             }
             lastStatus = res.status;
@@ -206,62 +208,28 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature) {
 }
 
 async function callGroqWithFallback(apiKey, messages, temperature, requestedModel) {
-    const visionModels = [
-        "llama-3.2-11b-vision-instruct",
-        "llama-3.2-90b-vision-preview",
-        "qwen-2.5-vl-72b",
-        "llava-v1.5-7b-instruct"
+    const activeGroqModels = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768"
     ];
 
-    if (requestedModel && !visionModels.includes(requestedModel) && !requestedModel.includes('/')) {
-        visionModels.unshift(requestedModel);
+    if (requestedModel && !activeGroqModels.includes(requestedModel) && !requestedModel.includes('/')) {
+        activeGroqModels.unshift(requestedModel);
     }
 
-    let lastErr = null;
-    let lastStatus = 500;
-
-    for (const model of visionModels) {
-        try {
-            const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    temperature: temperature ?? 0.5,
-                    max_tokens: 2048,
-                    response_format: { type: "json_object" }
-                })
-            });
-
-            const data = await res.json();
-            if (res.ok && data.choices?.[0]?.message?.content) {
-                return { ok: true, data };
-            }
-            lastStatus = res.status;
-            lastErr = data.error?.message || `Groq ${model} error ${res.status}`;
-            if (res.status === 401 || data.error?.message?.toLowerCase().includes("invalid api key")) {
-                return { ok: false, error: "Invalid API Key", status: 401 };
-            }
-        } catch (e) {
-            lastErr = e.message;
-        }
-    }
-
-    // Text-only fallback (strip image_url payloads to avoid 400 errors on text models)
-    const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"];
     const textOnlyMessages = messages.map(msg => {
         if (Array.isArray(msg.content)) {
             const textParts = msg.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
-            return { role: msg.role, content: textParts || "Generate stock metadata with title, description, keywords." };
+            return { role: msg.role, content: textParts || "Generate accurate stock metadata." };
         }
         return msg;
     });
 
-    for (const model of textModels) {
+    let lastErr = null;
+    let lastStatus = 500;
+
+    for (const model of activeGroqModels) {
         try {
             const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
@@ -272,7 +240,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                 body: JSON.stringify({
                     model,
                     messages: textOnlyMessages,
-                    temperature: temperature ?? 0.5,
+                    temperature: temperature ?? 0.4,
                     max_tokens: 2048,
                     response_format: { type: "json_object" }
                 })
@@ -280,6 +248,10 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
+                let content = data.choices[0].message.content;
+                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                data.choices[0].message.content = content;
+                data.isLowConfidence = true;
                 return { ok: true, data };
             }
             lastStatus = res.status;
@@ -1892,4 +1864,75 @@ Respond ONLY with a valid JSON object in this exact structure without markdown b
     }
   }
 );
+
+// Priority 6: Automated API key health checks for the Firestore pool
+exports.checkApiKeyHealth = onSchedule(
+  {
+    schedule: "every 1 hours",
+    timeoutSeconds: 60,
+    memory: "512MiB"
+  },
+  async (event) => {
+    console.log("Running scheduled API Key pool health check...");
+    const db = admin.firestore();
+    try {
+      const keysSnap = await db.collection('api_keys_pool').get();
+      const now = Date.now();
+
+      for (const doc of keysSnap.docs) {
+        const data = doc.data();
+        const poolKey = (data.api_key || data.key || "").trim();
+        if (!poolKey) continue;
+
+        // Skip keys already flagged as invalid unless manually reset
+        if (data.status === 'invalid') continue;
+
+        // Reset cooldown if window passed
+        if (data.status === 'cooldown' && data.cooldownUntil && data.cooldownUntil < now) {
+          await doc.ref.update({
+            status: 'active',
+            cooldownUntil: admin.firestore.FieldValue.delete(),
+            lastChecked: admin.firestore.FieldValue.serverTimestamp()
+          }).catch(()=>{});
+          continue;
+        }
+
+        // Send a minimal ping test request depending on key format
+        let isValid = true;
+        try {
+          if (poolKey.startsWith("AIza")) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${poolKey}`;
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "ping" }] }] })
+            });
+            if (res.status === 400 || res.status === 401) {
+              const resData = await res.json().catch(()=>({}));
+              if (resData.error?.message?.toLowerCase().includes("key")) isValid = false;
+            }
+          }
+        } catch(pingErr) {
+          console.warn(`Health ping check failed for key ${doc.id}:`, pingErr.message);
+        }
+
+        if (!isValid) {
+          console.log(`Marking key ${doc.id} as invalid in Firestore pool.`);
+          await doc.ref.update({
+            status: 'invalid',
+            lastChecked: admin.firestore.FieldValue.serverTimestamp()
+          }).catch(()=>{});
+        } else {
+          await doc.ref.update({
+            lastChecked: admin.firestore.FieldValue.serverTimestamp()
+          }).catch(()=>{});
+        }
+      }
+      console.log("API Key pool health check completed successfully.");
+    } catch(err) {
+      console.error("Error in checkApiKeyHealth scheduled task:", err);
+    }
+  }
+);
+
 
