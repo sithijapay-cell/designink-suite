@@ -1,6 +1,5 @@
 const express = require("express");
 const cors = require("cors");
-const admin = require("firebase-admin");
 const crypto = require("crypto");
 
 const app = express();
@@ -9,75 +8,34 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Initialize Firebase Admin cleanly for Vercel
-let isFirestoreAvailable = false;
-if (!admin.apps.length) {
-    try {
-        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            admin.initializeApp({
-                credential: admin.credential.cert(serviceAccount)
-            });
-            isFirestoreAvailable = true;
-        } else if (process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT) {
-            admin.initializeApp({
-                projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT
-            });
-            isFirestoreAvailable = true;
-        } else {
-            console.warn("Firebase Admin: FIREBASE_SERVICE_ACCOUNT environment variable is not set in Vercel. Firestore key pool is disabled.");
-        }
-    } catch (e) {
-        console.warn("Firebase Admin initialization warning:", e.message);
-    }
-} else {
-    isFirestoreAvailable = true;
-}
-
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "DesignInk_SafeKey_12345678901234";
 
-function encryptText(text) {
-    if (!text) return text;
-    try {
-        const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-        let encrypted = cipher.update(text);
-        encrypted = Buffer.concat([encrypted, cipher.final()]);
-        return iv.toString('hex') + ':' + encrypted.toString('hex');
-    } catch (e) {
-        return Buffer.from(text).toString('base64');
-    }
+// --- In-Memory Key Cooldown & Rotation Manager ---
+const keyCooldowns = new Map(); // key -> cooldownUntil timestamp
+
+function getEnvKeys(envVarName) {
+    const raw = process.env[envVarName] || "";
+    if (!raw) return [];
+    return raw.split(',').map(k => k.trim()).filter(k => k.length > 5);
 }
 
-function decryptText(text) {
-    if (!text) return text;
-    try {
-        if (text.includes(':')) {
-            const textParts = text.split(':');
-            const iv = Buffer.from(textParts.shift(), 'hex');
-            const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-            const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-            let decrypted = decipher.update(encryptedText);
-            decrypted = Buffer.concat([decrypted, decipher.final()]);
-            return decrypted.toString();
-        }
-        return text;
-    } catch (e) {
-        return text;
+function isKeyInCooldown(key) {
+    if (!key) return true;
+    const cooldownUntil = keyCooldowns.get(key);
+    if (cooldownUntil && cooldownUntil > Date.now()) {
+        return true;
     }
+    if (cooldownUntil && cooldownUntil <= Date.now()) {
+        keyCooldowns.delete(key);
+    }
+    return false;
 }
 
-let currentKeyIndex = 0;
-
-async function logActivity(type, context) {
-    try {
-        const db = admin.firestore();
-        await db.collection('usage_logs').add({
-            type,
-            ...context,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-    } catch (e) {}
+function markKeyCooldown(key, durationMs = 300000) { // default 5 minutes
+    if (key) {
+        keyCooldowns.set(key, Date.now() + durationMs);
+        console.warn(`[KeyManager] Key (${key.substring(0, 6)}...) placed on ${Math.round(durationMs/1000)}s in-memory cooldown.`);
+    }
 }
 
 function parseUserMessagePayload(messages) {
@@ -169,7 +127,15 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
             }
             lastErr = data.error?.message || `Gemini HTTP ${res.status}`;
             console.error(`[Gemini Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
-            if (res.status === 400 && data.error?.message?.toLowerCase().includes("key")) {
+
+            // STEP 3: Fast-fail on account-level suspension or PERMISSION_DENIED
+            const errLower = (data.error?.message || "").toLowerCase();
+            if (res.status === 403 || errLower.includes("suspended") || errLower.includes("permission_denied")) {
+                console.error(`[Gemini Error] Key (${apiKey.substring(0, 6)}...) ACCOUNT SUSPENDED / PERMISSION_DENIED (HTTP ${res.status}). Skipping remaining Gemini models immediately.`);
+                return { ok: false, error: `Account Suspended: ${lastErr}`, status: 403, isAccountSuspended: true };
+            }
+
+            if (res.status === 400 && errLower.includes("key")) {
                 return { ok: false, error: "Invalid API Key", status: 401 };
             }
         } catch (e) {
@@ -352,43 +318,8 @@ async function callGitHubModels(apiKey, messages, temperature, requestedModel) {
 }
 
 async function callMoondream(textPrompt, base64Data) {
-    if (!base64Data) return { ok: false, error: "No base64 image data for Moondream" };
-    const moondreamUrl = process.env.MOONDREAM_API_URL || "https://vikhyat-moondream2.hf.space/generate";
-    try {
-        console.log(`[Moondream] Requesting microservice at ${moondreamUrl}...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-        const res = await fetch(moondreamUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imageBase64: base64Data }),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-            const data = await res.json();
-            if (data.status === "success" && data.metadata) {
-                console.log("[Moondream] SUCCESS on Moondream2 ZeroGPU!");
-                return {
-                    ok: true,
-                    data: {
-                        choices: [{
-                            message: {
-                                content: JSON.stringify({
-                                    title: data.metadata.title || "Creative Visual Stock Illustration",
-                                    description: data.metadata.description || "High quality stock photo illustration.",
-                                    keywords: data.metadata.keywords || (data.metadata.tags ? data.metadata.tags.join(", ") : "")
-                                })
-                            }
-                        }]
-                    }
-                };
-            }
-        }
-        console.error(`[Moondream Error] Microservice returned HTTP ${res.status}`);
-    } catch (e) {
-        console.error("[Moondream Exception] Call failed or timed out:", e.message);
-    }
+    // Moondream public HF endpoint is currently down/deprecated. Disabling cleanly to prevent added latency.
+    console.log("[Moondream] Moondream backup is currently disabled.");
     return { ok: false, error: "Moondream backup unavailable" };
 }
 
@@ -471,60 +402,65 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
     console.log(`[VisionPipeline] Pipeline initialized. User API key provided: ${apiKey ? (apiKey === "DesignInk_Internal" ? "Internal Default" : "User Custom Key (" + apiKey.substring(0, 6) + "...)") : "None"}`);
 
-    // 1. Always prioritize the user-provided API key for this request first
+    // 1. User-provided key from UI (if valid and not cooling down)
     if (apiKey && apiKey !== "DesignInk_Internal" && typeof apiKey === "string" && apiKey.trim().length > 5) {
-        keysToTry.push({ id: 'user_provided', key: apiKey.trim() });
-    }
-
-    // 2. Fetch active keys from Firestore pool as secondary failover options
-    try {
-        if (isFirestoreAvailable && admin.apps.length > 0) {
-            console.log("[FirestorePool] Querying Firestore collection 'api_keys_pool' for active keys...");
-            const db = admin.firestore();
-            const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
-            const now = Date.now();
-
-            keysSnap.forEach(doc => {
-                const data = doc.data();
-                const poolKey = (data.api_key || data.key || "").trim();
-                if (poolKey && !keysToTry.some(k => k.key === poolKey)) {
-                    if (data.status === 'active' || (data.cooldownUntil && data.cooldownUntil < now)) {
-                        keysToTry.push({ id: doc.id, key: poolKey });
-                    }
-                }
-            });
-            console.log(`[FirestorePool] Found ${keysSnap.size} total docs in pool. Candidate keys to attempt: ${keysToTry.length}`);
-        } else {
-            console.warn("[FirestorePool Warning] Firebase Admin SDK is NOT initialized (missing FIREBASE_SERVICE_ACCOUNT credentials on Vercel). Cannot fetch Firestore keys pool.");
+        const userKey = apiKey.trim();
+        if (!isKeyInCooldown(userKey)) {
+            keysToTry.push({ id: 'user_provided', key: userKey });
         }
-    } catch(e) {
-        console.error("[FirestorePool Exception] Error fetching keys from Firestore pool:", e.message);
     }
+
+    // 2. Load keys from Environment Variables (Gemini -> OpenRouter -> GitHub -> Groq)
+    const geminiEnvKeys = getEnvKeys("GEMINI_API_KEYS");
+    geminiEnvKeys.forEach((key, idx) => {
+        if (!isKeyInCooldown(key) && !keysToTry.some(k => k.key === key)) {
+            keysToTry.push({ id: `env_gemini_${idx+1}`, key, provider: 'gemini' });
+        }
+    });
+
+    const openRouterEnvKeys = getEnvKeys("OPENROUTER_API_KEYS");
+    openRouterEnvKeys.forEach((key, idx) => {
+        if (!isKeyInCooldown(key) && !keysToTry.some(k => k.key === key)) {
+            keysToTry.push({ id: `env_openrouter_${idx+1}`, key, provider: 'openrouter' });
+        }
+    });
+
+    const gitHubEnvKeys = getEnvKeys("GITHUB_MODELS_API_KEYS");
+    gitHubEnvKeys.forEach((key, idx) => {
+        if (!isKeyInCooldown(key) && !keysToTry.some(k => k.key === key)) {
+            keysToTry.push({ id: `env_github_${idx+1}`, key, provider: 'github' });
+        }
+    });
+
+    const groqEnvKeys = getEnvKeys("GROQ_API_KEYS");
+    groqEnvKeys.forEach((key, idx) => {
+        if (!isKeyInCooldown(key) && !keysToTry.some(k => k.key === key)) {
+            keysToTry.push({ id: `env_groq_${idx+1}`, key, provider: 'groq' });
+        }
+    });
+
+    console.log(`[VisionPipeline] Total candidate keys available: ${keysToTry.length}`);
 
     let lastErrorMessage = "";
 
     if (keysToTry.length === 0) {
-        console.error("[VisionPipeline Warning] Zero candidate API keys available! (User provided no key, and Firestore pool is empty/uninitialized).");
+        console.error("[VisionPipeline Warning] Zero candidate API keys available! Set GEMINI_API_KEYS or OPENROUTER_API_KEYS in Vercel environment variables.");
     }
 
     for (const keyObj of keysToTry) {
         const trimmedKey = keyObj.key;
-        if (!trimmedKey) continue;
+        if (!trimmedKey || isKeyInCooldown(trimmedKey)) continue;
 
-        let provider = 'gemini';
-        if (trimmedKey.startsWith("gsk_")) {
-            provider = 'groq';
-        } else if (trimmedKey.startsWith("sk-or-")) {
-            provider = 'openrouter';
-        } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
-            provider = 'github';
-        } else if (trimmedKey.startsWith("AIza") || trimmedKey.startsWith("AQ") || (model && model.toLowerCase().includes("gemini")) || (model && model.toLowerCase().includes("google"))) {
-            provider = 'gemini';
-        } else if (model && (model.toLowerCase().includes("llama") || model.toLowerCase().includes("mixtral"))) {
-            provider = 'groq';
+        let provider = keyObj.provider;
+        if (!provider) {
+            if (trimmedKey.startsWith("gsk_")) provider = 'groq';
+            else if (trimmedKey.startsWith("sk-or-")) provider = 'openrouter';
+            else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) provider = 'github';
+            else if (trimmedKey.startsWith("AIza") || trimmedKey.startsWith("AQ") || (model && model.toLowerCase().includes("gemini"))) provider = 'gemini';
+            else provider = 'gemini';
         }
 
-        console.log(`[VisionPipeline] Routing key candidate '${keyObj.id}' (${trimmedKey.substring(0, 6)}...) to provider: [${provider.toUpperCase()}]`);
+        console.log(`[VisionPipeline] Attempting key candidate '${keyObj.id}' (${trimmedKey.substring(0, 6)}...) -> Provider: [${provider.toUpperCase()}]`);
 
         let result;
         if (provider === 'gemini') {
@@ -537,15 +473,6 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
             result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
         }
 
-        // If primary provider failed and key wasn't explicitly Groq/OpenRouter, try Native Gemini as failover
-        if (!result.ok && provider !== 'gemini' && !trimmedKey.startsWith("gsk_") && !trimmedKey.startsWith("sk-or-")) {
-            console.log(`[VisionPipeline Failover] Provider '${provider}' failed. Trying Native Gemini failover...`);
-            const geminiFailover = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature, model);
-            if (geminiFailover.ok) {
-                result = geminiFailover;
-            }
-        }
-
         if (result.ok) {
             console.log(`[VisionPipeline] SUCCESS via key candidate '${keyObj.id}'!`);
             return { ok: true, data: result.data, keyId: keyObj.id };
@@ -553,26 +480,13 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
         lastErrorMessage = result.error || lastErrorMessage;
 
-        if (result.status === 401 && keyObj.id !== 'user_provided' && isFirestoreAvailable && admin.apps.length > 0) {
-            try {
-                const db = admin.firestore();
-                await db.collection('api_keys_pool').doc(keyObj.id).update({ status: 'invalid' });
-                console.log(`[FirestorePool] Key '${keyObj.id}' marked as invalid in Firestore pool.`);
-            } catch(e) {}
+        // On Rate Limit (429) or Account Suspension (403), place key on in-memory cooldown
+        if (result.status === 429 || result.status === 403 || result.isAccountSuspended) {
+            markKeyCooldown(trimmedKey, 300000); // 5 minute cooldown
         }
     }
 
-    // 3. Backup Vision Attempt: Moondream2 ZeroGPU microservice before dummy fallback
-    if (base64Data) {
-        console.log("[VisionPipeline] Primary key candidates failed. Attempting Moondream2 ZeroGPU backup...");
-        const moondreamRes = await callMoondream(textPrompt, base64Data);
-        if (moondreamRes.ok) {
-            console.log("[VisionPipeline] SUCCESS via Moondream2 ZeroGPU microservice!");
-            return { ok: true, data: moondreamRes.data, isMoondream: true };
-        }
-    }
-
-    // 4. Hardcoded Fallback generation if no Vision AI call succeeded — Tagged explicitly as fallback
+    // Hardcoded Fallback generation if no Vision AI call succeeded
     console.error(`[VisionPipeline Fallback] ALL vision providers failed. Returning hardcoded dummy metadata fallback. Last error: ${lastErrorMessage || "No keys available"}`);
     return {
         ok: true,
