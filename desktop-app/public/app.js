@@ -568,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         resultsList.innerHTML = '';
 
-        const currentModelValue = modelSelect ? modelSelect.value : 'gemini-2.0-flash';
+        const currentModelValue = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
 
         // --- Helper: process a single file with a given API key ---
         async function processFile(fileObj, apiKey) {

@@ -74,7 +74,9 @@ function parseUserMessagePayload(messages) {
 }
 
 async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature, requestedModel) {
-    // Primary Vision Provider: Gemini 2.5 Flash -> 2.5 Flash Lite -> 2.0 Flash -> 1.5 Flash -> 1.5 Pro
+    // Primary Vision Provider Priority Array (Updated: August 2026)
+    // Note: Google frequently renames/deprecates models (e.g. gemini-2.0-flash returns 404).
+    // Always check https://ai.google.dev/gemini-api/docs/models every few months for exact IDs.
     const models = [
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
@@ -84,6 +86,8 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
     ];
     if (requestedModel && models.includes(requestedModel)) {
         models.splice(models.indexOf(requestedModel), 1);
+        models.unshift(requestedModel);
+    } else if (requestedModel && !models.includes(requestedModel)) {
         models.unshift(requestedModel);
     }
     let lastErr = null;
@@ -125,11 +129,17 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                     }
                 };
             }
-            lastErr = data.error?.message || `Gemini HTTP ${res.status}`;
-            console.error(`[Gemini Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
 
-            // STEP 3: Fast-fail on account-level suspension or PERMISSION_DENIED
+            lastErr = data.error?.message || `Gemini HTTP ${res.status}`;
             const errLower = (data.error?.message || "").toLowerCase();
+
+            // 404 Model Not Found / Deprecated: skip to NEXT model in array cleanly
+            if (res.status === 404 || errLower.includes("not found") || errLower.includes("deprecated")) {
+                console.warn(`[Gemini Warning] Model '${model}' returned 404/Not Found. Skipping to next model...`);
+                continue;
+            }
+
+            // 403 Account Suspended / PERMISSION_DENIED: fast-fail key immediately
             if (res.status === 403 || errLower.includes("suspended") || errLower.includes("permission_denied")) {
                 console.error(`[Gemini Error] Key (${apiKey.substring(0, 6)}...) ACCOUNT SUSPENDED / PERMISSION_DENIED (HTTP ${res.status}). Skipping remaining Gemini models immediately.`);
                 return { ok: false, error: `Account Suspended: ${lastErr}`, status: 403, isAccountSuspended: true };
@@ -138,6 +148,8 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
             if (res.status === 400 && errLower.includes("key")) {
                 return { ok: false, error: "Invalid API Key", status: 401 };
             }
+
+            console.error(`[Gemini Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
         } catch (e) {
             lastErr = e.message;
             console.error(`[Gemini Exception] Exception calling ${model}:`, e.message);
