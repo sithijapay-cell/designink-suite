@@ -388,12 +388,27 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
             console.log(`[VisionPipeline CloudFunction] Attempting key candidate '${selectedKeyObj.id}' (${trimmedKey.substring(0, 6)}...)...`);
 
-            let result;
-            if (trimmedKey.startsWith("AIza")) {
-                result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
+            let provider = 'gemini';
+            if (trimmedKey.startsWith("gsk_")) {
+                provider = 'groq';
             } else if (trimmedKey.startsWith("sk-or-")) {
-                result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
+                provider = 'openrouter';
             } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
+                provider = 'github';
+            } else if (trimmedKey.startsWith("AIza") || trimmedKey.startsWith("AQ") || (model && model.toLowerCase().includes("gemini")) || (model && model.toLowerCase().includes("google"))) {
+                provider = 'gemini';
+            } else if (model && (model.toLowerCase().includes("llama") || model.toLowerCase().includes("mixtral"))) {
+                provider = 'groq';
+            }
+
+            console.log(`[VisionPipeline CloudFunction] Routing key candidate '${selectedKeyObj.id}' (${trimmedKey.substring(0, 6)}...) to provider: [${provider.toUpperCase()}]`);
+
+            let result;
+            if (provider === 'gemini') {
+                result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
+            } else if (provider === 'openrouter') {
+                result = await callOpenRouterWithFallback(trimmedKey, messages, temperature);
+            } else if (provider === 'github') {
                 result = await callGitHubModels(trimmedKey, messages, temperature);
             } else {
                 result = await callGroqWithFallback(trimmedKey, messages, temperature, model);

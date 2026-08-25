@@ -10,6 +10,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Initialize Firebase Admin cleanly for Vercel
+let isFirestoreAvailable = false;
 if (!admin.apps.length) {
     try {
         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -17,12 +18,20 @@ if (!admin.apps.length) {
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount)
             });
+            isFirestoreAvailable = true;
+        } else if (process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT) {
+            admin.initializeApp({
+                projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT
+            });
+            isFirestoreAvailable = true;
         } else {
-            admin.initializeApp();
+            console.warn("Firebase Admin: FIREBASE_SERVICE_ACCOUNT environment variable is not set in Vercel. Firestore key pool is disabled.");
         }
     } catch (e) {
         console.warn("Firebase Admin initialization warning:", e.message);
     }
+} else {
+    isFirestoreAvailable = true;
 }
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "DesignInk_SafeKey_12345678901234";
@@ -469,7 +478,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
     // 2. Fetch active keys from Firestore pool as secondary failover options
     try {
-        if (admin.apps.length > 0) {
+        if (isFirestoreAvailable && admin.apps.length > 0) {
             console.log("[FirestorePool] Querying Firestore collection 'api_keys_pool' for active keys...");
             const db = admin.firestore();
             const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
@@ -486,7 +495,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
             });
             console.log(`[FirestorePool] Found ${keysSnap.size} total docs in pool. Candidate keys to attempt: ${keysToTry.length}`);
         } else {
-            console.warn("[FirestorePool Warning] Firebase Admin SDK is NOT initialized (missing FIREBASE_SERVICE_ACCOUNT credentials on Vercel). Cannot fetch Firestore keys!");
+            console.warn("[FirestorePool Warning] Firebase Admin SDK is NOT initialized (missing FIREBASE_SERVICE_ACCOUNT credentials on Vercel). Cannot fetch Firestore keys pool.");
         }
     } catch(e) {
         console.error("[FirestorePool Exception] Error fetching keys from Firestore pool:", e.message);
@@ -502,17 +511,39 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         const trimmedKey = keyObj.key;
         if (!trimmedKey) continue;
 
-        console.log(`[VisionPipeline] Attempting key candidate '${keyObj.id}' (${trimmedKey.substring(0, 6)}...)...`);
+        let provider = 'gemini';
+        if (trimmedKey.startsWith("gsk_")) {
+            provider = 'groq';
+        } else if (trimmedKey.startsWith("sk-or-")) {
+            provider = 'openrouter';
+        } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
+            provider = 'github';
+        } else if (trimmedKey.startsWith("AIza") || trimmedKey.startsWith("AQ") || (model && model.toLowerCase().includes("gemini")) || (model && model.toLowerCase().includes("google"))) {
+            provider = 'gemini';
+        } else if (model && (model.toLowerCase().includes("llama") || model.toLowerCase().includes("mixtral"))) {
+            provider = 'groq';
+        }
+
+        console.log(`[VisionPipeline] Routing key candidate '${keyObj.id}' (${trimmedKey.substring(0, 6)}...) to provider: [${provider.toUpperCase()}]`);
 
         let result;
-        if (trimmedKey.startsWith("AIza")) {
+        if (provider === 'gemini') {
             result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature, model);
-        } else if (trimmedKey.startsWith("sk-or-")) {
+        } else if (provider === 'openrouter') {
             result = await callOpenRouterWithFallback(trimmedKey, messages, temperature, model);
-        } else if (trimmedKey.startsWith("ghp_") || trimmedKey.startsWith("github_pat_") || trimmedKey.startsWith("gho_")) {
+        } else if (provider === 'github') {
             result = await callGitHubModels(trimmedKey, messages, temperature, model);
         } else {
             result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
+        }
+
+        // If primary provider failed and key wasn't explicitly Groq/OpenRouter, try Native Gemini as failover
+        if (!result.ok && provider !== 'gemini' && !trimmedKey.startsWith("gsk_") && !trimmedKey.startsWith("sk-or-")) {
+            console.log(`[VisionPipeline Failover] Provider '${provider}' failed. Trying Native Gemini failover...`);
+            const geminiFailover = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature, model);
+            if (geminiFailover.ok) {
+                result = geminiFailover;
+            }
         }
 
         if (result.ok) {
@@ -522,7 +553,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
         lastErrorMessage = result.error || lastErrorMessage;
 
-        if (result.status === 401 && keyObj.id !== 'user_provided' && admin.apps.length > 0) {
+        if (result.status === 401 && keyObj.id !== 'user_provided' && isFirestoreAvailable && admin.apps.length > 0) {
             try {
                 const db = admin.firestore();
                 await db.collection('api_keys_pool').doc(keyObj.id).update({ status: 'invalid' });
