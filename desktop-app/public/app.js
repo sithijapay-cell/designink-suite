@@ -242,17 +242,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 let providerIcon = '<i class="fas fa-key" style="color:var(--accent-glow);"></i>';
                 let providerLabel = 'Key';
                 
-                if (key.startsWith('AIza')) {
+                if (key.startsWith('AIza') || key.startsWith('AQ')) {
                     providerIcon = '<i class="fab fa-google" style="color:#34d399;"></i>';
                     providerLabel = 'Gemini';
                 } else if (key.startsWith('ghp_') || key.startsWith('github_pat_')) {
                     providerIcon = '<i class="fab fa-github" style="color:#c084fc;"></i>';
                     providerLabel = 'GitHub PAT';
                 } else if (key.startsWith('sk-or-')) {
-                    providerIcon = '<i class="fas fa-globe" style="color:#38bdf8;"></i>';
+                    providerIcon = '<i class="fas fa-network-wired" style="color:#60a5fa;"></i>';
                     providerLabel = 'OpenRouter';
                 } else if (key.startsWith('gsk_')) {
-                    providerIcon = '<i class="fas fa-bolt" style="color:#38bdf8;"></i>';
+                    providerIcon = '<i class="fas fa-bolt" style="color:#f59e0b;"></i>';
                     providerLabel = 'Groq';
                 }
 
@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             document.querySelectorAll('.remove-key-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const idx = e.currentTarget.getAttribute('data-index');
+                    const idx = parseInt(e.currentTarget.getAttribute('data-index'), 10);
                     apiKeys.splice(idx, 1);
                     localStorage.setItem('groqApiKeys', JSON.stringify(apiKeys));
                     updateKeyUI();
