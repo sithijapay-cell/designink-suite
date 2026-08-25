@@ -301,22 +301,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let addedCount = 0;
 
         candidateKeys.forEach(val => {
-            const isValidFormat = val.length >= 10 && (
-                val.startsWith('gsk_') || 
-                val.startsWith('AIza') || 
-                val.startsWith('ghp_') || 
-                val.startsWith('github_pat_') || 
-                val.startsWith('sk-or-') ||
-                val.length > 20
-            );
+            const isValidFormat = val.length >= 8;
 
             if (isValidFormat && apiKeys.length < 50 && !apiKeys.includes(val)) {
                 apiKeys.push(val);
                 addedCount++;
-                
-                if (typeof firebase !== 'undefined' && firebase.functions) {
-                    firebase.functions().httpsCallable('saveGroqApiKey')({ key: val, type: "Vision Metadata Multi-AI" }).catch(()=>{});
-                }
             }
         });
 
