@@ -123,6 +123,7 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
 
     for (const model of models) {
         try {
+            console.log(`[Gemini] Requesting model ${model}...`);
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             const res = await fetch(url, {
                 method: "POST",
@@ -146,8 +147,8 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
             const data = await res.json();
             if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
                 let generatedContent = data.candidates[0].content.parts[0].text;
-                // Backend safety net: strip stray markdown code fences before returning
                 generatedContent = generatedContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+                console.log(`[Gemini] SUCCESS on model ${model}!`);
                 return {
                     ok: true,
                     data: {
@@ -158,11 +159,13 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                 };
             }
             lastErr = data.error?.message || `Gemini HTTP ${res.status}`;
+            console.error(`[Gemini Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
             if (res.status === 400 && data.error?.message?.toLowerCase().includes("key")) {
                 return { ok: false, error: "Invalid API Key", status: 401 };
             }
         } catch (e) {
             lastErr = e.message;
+            console.error(`[Gemini Exception] Exception calling ${model}:`, e.message);
         }
     }
     return { ok: false, error: lastErr, status: 400 };
@@ -190,6 +193,7 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
 
     for (const model of freeModels) {
         try {
+            console.log(`[OpenRouter] Requesting model ${model}...`);
             const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -211,15 +215,18 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
                 let content = data.choices[0].message.content;
                 content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
                 data.choices[0].message.content = content;
+                console.log(`[OpenRouter] SUCCESS on model ${model}!`);
                 return { ok: true, data };
             }
             lastStatus = res.status;
             lastErr = data.error?.message || `OpenRouter ${model} error ${res.status}`;
+            console.error(`[OpenRouter Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
             if (res.status === 401 || data.error?.message?.toLowerCase().includes("key") || data.error?.message?.toLowerCase().includes("unauthorized")) {
                 return { ok: false, error: "Invalid API Key", status: 401 };
             }
         } catch (e) {
             lastErr = e.message;
+            console.error(`[OpenRouter Exception] Exception calling ${model}:`, e.message);
         }
     }
 
@@ -227,7 +234,6 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
 }
 
 async function callGroqWithFallback(apiKey, messages, temperature, requestedModel) {
-    // Pass full messages array (including image_url) unchanged to Groq without text stripping hacks.
     const activeGroqModels = [
         "llama-3.2-11b-vision-instruct",
         "llama-3.2-90b-vision-preview",
@@ -244,6 +250,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
 
     for (const model of activeGroqModels) {
         try {
+            console.log(`[Groq] Requesting model ${model}...`);
             const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -264,15 +271,18 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                 let content = data.choices[0].message.content;
                 content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
                 data.choices[0].message.content = content;
+                console.log(`[Groq] SUCCESS on model ${model}!`);
                 return { ok: true, data };
             }
             lastStatus = res.status;
             lastErr = data.error?.message || `Groq ${model} error ${res.status}`;
+            console.error(`[Groq Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
             if (res.status === 401 || data.error?.message?.toLowerCase().includes("invalid api key")) {
                 return { ok: false, error: "Invalid API Key", status: 401 };
             }
         } catch (e) {
             lastErr = e.message;
+            console.error(`[Groq Exception] Exception calling ${model}:`, e.message);
         }
     }
 
@@ -294,6 +304,7 @@ async function callGitHubModels(apiKey, messages, temperature, requestedModel) {
 
     for (const model of models) {
         try {
+            console.log(`[GitHubModels] Requesting model ${model}...`);
             const res = await fetch("https://models.inference.ai.azure.com/chat/completions", {
                 method: "POST",
                 headers: {
@@ -314,14 +325,17 @@ async function callGitHubModels(apiKey, messages, temperature, requestedModel) {
                 let content = data.choices[0].message.content;
                 content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
                 data.choices[0].message.content = content;
+                console.log(`[GitHubModels] SUCCESS on model ${model}!`);
                 return { ok: true, data };
             }
             lastErr = data.error?.message || `GitHub Models ${model} ${res.status}`;
+            console.error(`[GitHubModels Error] Model ${model} failed (HTTP ${res.status}): ${lastErr}`);
             if (res.status === 401 || data.error?.message?.toLowerCase().includes("unauthorized") || data.error?.message?.toLowerCase().includes("invalid api key")) {
                 return { ok: false, error: "Invalid API Key", status: 401 };
             }
         } catch (e) {
             lastErr = e.message;
+            console.error(`[GitHubModels Exception] Exception calling ${model}:`, e.message);
         }
     }
 
@@ -332,6 +346,7 @@ async function callMoondream(textPrompt, base64Data) {
     if (!base64Data) return { ok: false, error: "No base64 image data for Moondream" };
     const moondreamUrl = process.env.MOONDREAM_API_URL || "https://vikhyat-moondream2.hf.space/generate";
     try {
+        console.log(`[Moondream] Requesting microservice at ${moondreamUrl}...`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
         const res = await fetch(moondreamUrl, {
@@ -344,6 +359,7 @@ async function callMoondream(textPrompt, base64Data) {
         if (res.ok) {
             const data = await res.json();
             if (data.status === "success" && data.metadata) {
+                console.log("[Moondream] SUCCESS on Moondream2 ZeroGPU!");
                 return {
                     ok: true,
                     data: {
@@ -360,8 +376,9 @@ async function callMoondream(textPrompt, base64Data) {
                 };
             }
         }
+        console.error(`[Moondream Error] Microservice returned HTTP ${res.status}`);
     } catch (e) {
-        console.warn("Moondream ZeroGPU backup call failed or timed out:", e.message);
+        console.error("[Moondream Exception] Call failed or timed out:", e.message);
     }
     return { ok: false, error: "Moondream backup unavailable" };
 }
@@ -443,6 +460,8 @@ function generateFallbackMetadata(textPrompt) {
 async function executeVisionPipeline({ apiKey, model, messages, temperature, textPrompt, mimeType, base64Data }) {
     let keysToTry = [];
 
+    console.log(`[VisionPipeline] Pipeline initialized. User API key provided: ${apiKey ? (apiKey === "DesignInk_Internal" ? "Internal Default" : "User Custom Key (" + apiKey.substring(0, 6) + "...)") : "None"}`);
+
     // 1. Always prioritize the user-provided API key for this request first
     if (apiKey && apiKey !== "DesignInk_Internal" && typeof apiKey === "string" && apiKey.trim().length > 5) {
         keysToTry.push({ id: 'user_provided', key: apiKey.trim() });
@@ -450,26 +469,40 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
     // 2. Fetch active keys from Firestore pool as secondary failover options
     try {
-        const db = admin.firestore();
-        const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
-        const now = Date.now();
+        if (admin.apps.length > 0) {
+            console.log("[FirestorePool] Querying Firestore collection 'api_keys_pool' for active keys...");
+            const db = admin.firestore();
+            const keysSnap = await db.collection('api_keys_pool').where('status', 'in', ['active', 'cooldown']).get();
+            const now = Date.now();
 
-        keysSnap.forEach(doc => {
-            const data = doc.data();
-            const poolKey = (data.api_key || data.key || "").trim();
-            if (poolKey && !keysToTry.some(k => k.key === poolKey)) {
-                if (data.status === 'active' || (data.cooldownUntil && data.cooldownUntil < now)) {
-                    keysToTry.push({ id: doc.id, key: poolKey });
+            keysSnap.forEach(doc => {
+                const data = doc.data();
+                const poolKey = (data.api_key || data.key || "").trim();
+                if (poolKey && !keysToTry.some(k => k.key === poolKey)) {
+                    if (data.status === 'active' || (data.cooldownUntil && data.cooldownUntil < now)) {
+                        keysToTry.push({ id: doc.id, key: poolKey });
+                    }
                 }
-            }
-        });
-    } catch(e) {}
+            });
+            console.log(`[FirestorePool] Found ${keysSnap.size} total docs in pool. Candidate keys to attempt: ${keysToTry.length}`);
+        } else {
+            console.warn("[FirestorePool Warning] Firebase Admin SDK is NOT initialized (missing FIREBASE_SERVICE_ACCOUNT credentials on Vercel). Cannot fetch Firestore keys!");
+        }
+    } catch(e) {
+        console.error("[FirestorePool Exception] Error fetching keys from Firestore pool:", e.message);
+    }
 
     let lastErrorMessage = "";
+
+    if (keysToTry.length === 0) {
+        console.error("[VisionPipeline Warning] Zero candidate API keys available! (User provided no key, and Firestore pool is empty/uninitialized).");
+    }
 
     for (const keyObj of keysToTry) {
         const trimmedKey = keyObj.key;
         if (!trimmedKey) continue;
+
+        console.log(`[VisionPipeline] Attempting key candidate '${keyObj.id}' (${trimmedKey.substring(0, 6)}...)...`);
 
         let result;
         if (trimmedKey.startsWith("AIza")) {
@@ -483,28 +516,33 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
 
         if (result.ok) {
+            console.log(`[VisionPipeline] SUCCESS via key candidate '${keyObj.id}'!`);
             return { ok: true, data: result.data, keyId: keyObj.id };
         }
 
         lastErrorMessage = result.error || lastErrorMessage;
 
-        if (result.status === 401 && keyObj.id !== 'user_provided') {
+        if (result.status === 401 && keyObj.id !== 'user_provided' && admin.apps.length > 0) {
             try {
                 const db = admin.firestore();
                 await db.collection('api_keys_pool').doc(keyObj.id).update({ status: 'invalid' });
+                console.log(`[FirestorePool] Key '${keyObj.id}' marked as invalid in Firestore pool.`);
             } catch(e) {}
         }
     }
 
     // 3. Backup Vision Attempt: Moondream2 ZeroGPU microservice before dummy fallback
     if (base64Data) {
+        console.log("[VisionPipeline] Primary key candidates failed. Attempting Moondream2 ZeroGPU backup...");
         const moondreamRes = await callMoondream(textPrompt, base64Data);
         if (moondreamRes.ok) {
+            console.log("[VisionPipeline] SUCCESS via Moondream2 ZeroGPU microservice!");
             return { ok: true, data: moondreamRes.data, isMoondream: true };
         }
     }
 
     // 4. Hardcoded Fallback generation if no Vision AI call succeeded — Tagged explicitly as fallback
+    console.error(`[VisionPipeline Fallback] ALL vision providers failed. Returning hardcoded dummy metadata fallback. Last error: ${lastErrorMessage || "No keys available"}`);
     return {
         ok: true,
         data: generateFallbackMetadata(textPrompt),

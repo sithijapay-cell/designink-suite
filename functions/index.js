@@ -386,6 +386,8 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
             currentKeyIndex++;
             const trimmedKey = selectedKeyObj.key ? selectedKeyObj.key.trim() : "";
 
+            console.log(`[VisionPipeline CloudFunction] Attempting key candidate '${selectedKeyObj.id}' (${trimmedKey.substring(0, 6)}...)...`);
+
             let result;
             if (trimmedKey.startsWith("AIza")) {
                 result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature);
@@ -398,6 +400,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
             }
 
             if (result.ok) {
+                console.log(`[VisionPipeline CloudFunction] SUCCESS via key candidate '${selectedKeyObj.id}'!`);
                 db.collection('api_metrics').doc('global').set({
                     totalRequestsProcessed: admin.firestore.FieldValue.increment(1)
                 }, { merge: true }).catch(()=>{});
@@ -412,6 +415,7 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
             }
 
             lastErrorMessage = result.error || "AI call failed";
+            console.error(`[VisionPipeline CloudFunction Error] Candidate '${selectedKeyObj.id}' failed:`, lastErrorMessage);
 
             if (result.status === 401 && selectedKeyObj.id !== 'user_provided') {
                 await db.collection('api_keys_pool').doc(selectedKeyObj.id).update({ status: 'invalid' }).catch(()=>{});
@@ -427,7 +431,24 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    return { ok: true, data: generateFallbackMetadata(textPrompt), fallback: true };
+    if (base64Data) {
+        console.log("[VisionPipeline CloudFunction] Primary keys failed. Attempting Moondream2 backup...");
+        const moondreamRes = await callMoondream(textPrompt, base64Data);
+        if (moondreamRes.ok) {
+            console.log("[VisionPipeline CloudFunction] SUCCESS via Moondream2 ZeroGPU microservice!");
+            return { ok: true, data: moondreamRes.data, isMoondream: true };
+        }
+    }
+
+    console.error("[VisionPipeline CloudFunction Fallback] ALL vision providers failed. Returning dummy metadata fallback.");
+    return {
+        ok: true,
+        data: generateFallbackMetadata(textPrompt),
+        fallback: true,
+        isFallback: true,
+        errorType: "ALL_PROVIDERS_FAILED",
+        details: "All vision AI providers failed"
+    };
 }
 
 exports.groqProxy = onCall(
