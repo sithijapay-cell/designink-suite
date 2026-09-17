@@ -438,13 +438,41 @@ function generateFallbackMetadata(textPrompt) {
     };
 }
 
+function extractCleanSubject(rawSubject) {
+    if (!rawSubject) return "a man";
+    
+    let cleaned = String(rawSubject)
+        .replace(/i want to generate (images|photos|prompts)? (of)?/gi, '')
+        .replace(/generate (images|photos|prompts)? (of)?/gi, '')
+        .replace(/every prompt must be (defferent|different)/gi, '')
+        .replace(/in (defferent|different) (angles|positions|poses)/gi, '')
+        .replace(/one image include/gi, '')
+        .replace(/like images/gi, '')
+        .replace(/8k resolution|professional lighting|octane render style/gi, '')
+        .replace(/sitting|standing|using mobile/gi, '')
+        .replace(/[\s,-]+/g, ' ')
+        .trim();
+
+    if (/man|guy|male/i.test(cleaned)) return "a man";
+    if (/woman|girl|female/i.test(cleaned)) return "a woman";
+    if (/people|person|group/i.test(cleaned)) return "a person";
+
+    const words = cleaned.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0 && words.length <= 4) {
+        return words.join(' ');
+    }
+
+    return "a man";
+}
+
 function generateFallbackPrompts(textPrompt, count = 50) {
-    let subject = "a person";
+    let subject = "a man";
     if (textPrompt) {
         const match = textPrompt.match(/Main Core Subject:\s*(.*)/i) || textPrompt.match(/subject:\s*(.*)/i);
         if (match && match[1]) {
-            let extracted = match[1].trim();
-            if (extracted.length > 3) subject = extracted;
+            subject = extractCleanSubject(match[1]);
+        } else {
+            subject = extractCleanSubject(textPrompt);
         }
     }
 
