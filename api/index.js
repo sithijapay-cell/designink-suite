@@ -248,18 +248,22 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
 }
 
 async function callGroqWithFallback(apiKey, messages, temperature, requestedModel, isJson = true) {
-    const activeGroqModels = [
-        "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it",
-        "llama-3.2-11b-vision-instruct"
-    ];
+    const hasImage = Array.isArray(messages) && messages.some(m => Array.isArray(m.content) && m.content.some(c => c.type === "image_url"));
+    
+    let targetModel = requestedModel;
+    if (hasImage || (targetModel && targetModel.toLowerCase().includes("gemini"))) {
+        targetModel = "llama-3.2-11b-vision-instruct";
+    }
 
-    if (requestedModel && activeGroqModels.includes(requestedModel)) {
-        activeGroqModels.splice(activeGroqModels.indexOf(requestedModel), 1);
-        activeGroqModels.unshift(requestedModel);
-    } else if (requestedModel && !activeGroqModels.includes(requestedModel) && !requestedModel.includes('/')) {
-        activeGroqModels.push(requestedModel);
+    const activeGroqModels = hasImage || (targetModel && targetModel.includes("vision"))
+        ? ["llama-3.2-11b-vision-instruct", "llama-3.2-90b-vision-instruct"]
+        : ["llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it", "llama-3.2-11b-vision-instruct"];
+
+    if (targetModel && activeGroqModels.includes(targetModel)) {
+        activeGroqModels.splice(activeGroqModels.indexOf(targetModel), 1);
+        activeGroqModels.unshift(targetModel);
+    } else if (targetModel && !activeGroqModels.includes(targetModel) && !targetModel.includes('/')) {
+        activeGroqModels.unshift(targetModel);
     }
 
     let lastErr = null;

@@ -764,7 +764,10 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
         }
 
         // --- Parallel Worker Queue ---
-        async function runWorker(apiKey) {
+        let fileIndex = 0;
+        const poolKeys = (apiKeys && apiKeys.length > 0) ? apiKeys : ["DesignInk_Internal"];
+
+        async function processBatchQueue() {
             while (queue.length > 0 && !stopGeneration) {
                 const fileObj = queue.shift();
                 if (!fileObj) break;
@@ -776,8 +779,8 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                 while (attempts < maxAttempts && !success && !stopGeneration) {
                     attempts++;
                     try {
-                        const workerKeys = (apiKeys && apiKeys.length > 0) ? apiKeys : ["DesignInk_Internal"];
-                        let activeWorkerKey = workerKeys[(attempts - 1) % workerKeys.length];
+                        // Round-robin key selection per file item + attempt offset
+                        let activeWorkerKey = poolKeys[(fileIndex + attempts - 1) % poolKeys.length];
 
                         const result = await processFile(fileObj, activeWorkerKey);
                         
@@ -789,12 +792,12 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                         success = true;
 
                         if (queue.length > 0 && !stopGeneration) {
-                            await new Promise(r => setTimeout(r, 2000));
+                            await new Promise(r => setTimeout(r, 2500));
                         }
                     } catch (err) {
                         console.error(`Attempt ${attempts} failed for ${fileObj.name}:`, err);
                         
-                        let waitTime = 1500 * Math.pow(1.5, attempts - 1);
+                        let waitTime = 2000 * Math.pow(1.5, attempts - 1);
                         const msg = err.message || "";
                         
                         const match = msg.match(/try again in ([0-9.]+)s/i);
@@ -816,6 +819,8 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                     }
                 }
 
+                fileIndex++;
+
                 if (!stopGeneration) {
                     completed++;
                     completedCountEl.textContent = completed;
@@ -827,8 +832,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             }
         }
 
-        const activeWorkerKeys = (apiKeys && apiKeys.length > 0) ? apiKeys : ["DesignInk_Internal"];
-        await Promise.all(activeWorkerKeys.map(key => runWorker(key)));
+        await processBatchQueue();
 
         isGenerating = false;
         releaseWakeLock();
