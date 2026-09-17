@@ -1517,14 +1517,24 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             const systemPrompt = `You are an elite, world-class AI Image Prompt Engineer specializing in Midjourney v6, DALL-E 3, and Stable Diffusion.
 Create a numbered list of exactly ${amountToGenerate} highly detailed, creative, and distinct text-to-image prompts based EXCLUSIVELY on the user's requested subject and style.
 
-Image Style: ${promptImageType.value}
-Main Core Subject / Topic: ${subject}
+Requested Topic / Core Subject: "${subject}"
+Requested Image Style: ${promptImageType.value}
 
-STRICT CREATIVE DIRECTIVES FOR HIGH DIVERSITY:
-- Stay 100% faithful to the requested subject: "${subject}". Do NOT force people, human poses, smartphones, or white backgrounds unless specifically requested by the user.
-- For EACH prompt, vary the scene composition, camera angles (wide shot, macro close-up, panoramic, isometric, dramatic low-angle), lighting (golden hour sunrise, neon night glow, cinematic volumetric light, soft diffuse studio light), atmosphere, color grading, background environments, and artistic details.
-- Make every prompt a unique, standalone masterpiece string.
-- Output ONLY the numbered list (e.g. "1. A detailed..."). No introductory text, no conversational filler, no code blocks, no backticks.`;
+STRICT TOPIC & SUBJECT FIDELITY RULES:
+1. PURE SUBJECT ADAPTATION: Every prompt MUST be 100% directly about "${subject}".
+   - If the subject is about "backgrounds" or "textures", generate ONLY pure background, pattern, texture, or backdrop prompts (e.g., fluid marble textures, neon gradient backdrops, geometric paper crafts, dark bokeh lighting). DO NOT include people, animals, or objects unless explicitly requested.
+   - If the subject is about "animals", generate ONLY animal prompts.
+   - If the subject is about "food", generate ONLY food/beverage prompts.
+   - If the subject is about "architecture", generate ONLY building/cityscape prompts.
+   - NEVER insert people, humans, model poses, white studio backdrops, or smartphones unless explicitly requested in "${subject}".
+
+2. MAXIMUM DIVERSITY WITHIN TOPIC:
+   - For EACH prompt, vary the color schemes, lighting setups (golden hour, neon glow, moody darkness, soft daylight), visual textures, mood, camera lenses, and creative sub-concepts of "${subject}".
+   - Make every single line a unique, detailed, professional prompt string.
+
+3. OUTPUT FORMAT:
+   - Provide ONLY a clean numbered list (e.g. "1. A detailed...").
+   - NO introductory text, NO conversational filler, NO code blocks, NO backticks.`;
 
             try {
                 const response = await fetch(PROXY_URL, {

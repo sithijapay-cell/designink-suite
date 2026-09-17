@@ -571,49 +571,59 @@ function generateFallbackPrompts(textPrompt, count = 50) {
             subject = extractCleanSubject(textPrompt);
         }
     }
+    const isBackgroundType = /background|texture|pattern|backdrop|wallpaper|abstract|gradient/i.test(subject);
 
-    const compositions = [
-        "A detailed wide-angle shot of",
-        "A crisp, high-resolution close-up capture featuring",
-        "An eye-level cinematic shot showcasing",
-        "A dramatic low-angle perspective of",
-        "A beautiful isometric view depicting",
-        "A panoramic, immersive scene of",
-        "A vibrant, highly detailed render of",
-        "A clean, minimal composition featuring",
-        "A dynamic macro shot emphasizing details of",
-        "A masterfully framed artistic depiction of"
+    const bgVariations = [
+        "A smooth fluid liquid marble background with vibrant color flow",
+        "A minimalist paper craft backdrop with soft geometric shadows",
+        "A dark cybernetic glowing neon grid texture with gradient lighting",
+        "An elegant soft bokeh light display background with warm particles",
+        "A clean modern architectural concrete wall texture with ambient light",
+        "A luxury golden silk fabric backdrop with elegant wave folds",
+        "A vibrant 3D glassmorphism frosted glass background with colorful blur",
+        "A subtle pastel watercolor splash texture background on textured paper",
+        "A futuristic hologram digital technology wave background display",
+        "A rich moody dark wooden board texture with natural grain"
+    ];
+
+    const compositions = isBackgroundType ? bgVariations : [
+        `A detailed wide-angle shot of ${subject}`,
+        `A crisp, high-resolution close-up capture featuring ${subject}`,
+        `An eye-level cinematic shot showcasing ${subject}`,
+        `A dramatic low-angle perspective of ${subject}`,
+        `A beautiful isometric view depicting ${subject}`,
+        `A panoramic, immersive scene of ${subject}`,
+        `A vibrant, highly detailed render of ${subject}`,
+        `A clean, minimal composition featuring ${subject}`,
+        `A dynamic macro shot emphasizing details of ${subject}`,
+        `A masterfully framed artistic depiction of ${subject}`
     ];
 
     const environments = [
-        "set against a dramatic natural outdoor setting",
-        "surrounded by vibrant modern architectural elements",
-        "placed in a minimalist aesthetic studio space",
-        "enveloped in atmospheric misty surroundings",
-        "capturing rich textures and subtle ambient details",
-        "with an elegant bokeh background display",
-        "highlighting striking geometric composition",
-        "set against a rich, moody tonal backdrop",
-        "bathed in cinematic soft volumetric atmosphere",
-        "featuring crisp, high-contrast focal elements"
+        "with rich color depth and vibrant contrast",
+        "highlighting striking geometric balance and subtle details",
+        "featuring elegant atmospheric depth and soft gradients",
+        "with crisp high-definition resolution and fine textures",
+        "bathed in cinematic lighting with subtle specular highlights"
     ];
 
     const lightings = [
-        "lit by warm golden-hour sunlight with soft shadows.",
-        "illuminated by cool neon rim lighting with vibrant contrast.",
-        "featuring soft diffuse studio lighting with natural color grading.",
-        "bathed in dramatic chiaroscuro key lighting and crisp reflections.",
-        "enhanced by subtle ambient backlight and vibrant atmosphere.",
-        "with brilliant highlights, fine textures, and 8k detail resolution."
+        "golden hour warm lighting.",
+        "neon rim lighting with vivid contrast.",
+        "soft diffuse studio lighting.",
+        "dramatic chiaroscuro lighting.",
+        "ambient volumetric lighting."
     ];
 
     const prompts = [];
     for (let i = 0; i < count; i++) {
-        const comp = compositions[i % compositions.length];
+        const comp = isBackgroundType 
+            ? `${compositions[i % compositions.length]}, variation ${i + 1}`
+            : compositions[i % compositions.length];
         const env = environments[(i * 3) % environments.length];
         const light = lightings[(i * 7) % lightings.length];
 
-        let promptText = `${comp} ${subject}, ${env}, ${style} style, ${light}`;
+        let promptText = `${comp}, ${env}, ${style} style, ${light}`;
         prompts.push(`${i + 1}. ${promptText}`);
     }
 
