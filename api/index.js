@@ -543,6 +543,15 @@ function extractCleanSubject(rawSubject) {
     if (!rawSubject) return "creative visual design";
     
     let cleaned = String(rawSubject)
+        .replace(/You are an elite[^\n]*/gi, '')
+        .replace(/Create a numbered list[^\n]*/gi, '')
+        .replace(/Image Style:[^\n]*/gi, '')
+        .replace(/Requested Image Style:[^\n]*/gi, '')
+        .replace(/STRICT TOPIC[^\n]*/gi, '')
+        .replace(/PURE SUBJECT[^\n]*/gi, '')
+        .replace(/MAXIMUM DIVERSITY[^\n]*/gi, '')
+        .replace(/OUTPUT FORMAT[^\n]*/gi, '')
+        .replace(/Do NOT force people[^\n]*/gi, '')
         .replace(/i want to generate (images|photos|prompts)? (of)?/gi, '')
         .replace(/generate (images|photos|prompts)? (of)?/gi, '')
         .replace(/every prompt must be (defferent|different)/gi, '')
@@ -557,21 +566,33 @@ function extractCleanSubject(rawSubject) {
 }
 
 function generateFallbackPrompts(textPrompt, count = 50) {
-    let subject = "creative visual design";
+    let subject = "";
     let style = "High-quality Photo";
 
     if (textPrompt) {
-        const styleMatch = textPrompt.match(/Image Style:\s*([^\n]+)/i) || textPrompt.match(/Style:\s*([^\n]+)/i);
+        const styleMatch = textPrompt.match(/Requested Image Style:\s*([^\n\r]+)/i) || 
+                           textPrompt.match(/Image Style:\s*([^\n\r]+)/i) || 
+                           textPrompt.match(/Style:\s*([^\n\r]+)/i);
         if (styleMatch) style = styleMatch[1].trim();
 
-        const subjectMatch = textPrompt.match(/Main Core Subject \/ Topic:\s*([^\n]+)/i) || textPrompt.match(/Main Core Subject:\s*([^\n]+)/i) || textPrompt.match(/Topic:\s*([^\n]+)/i);
-        if (subjectMatch) {
+        const subjectMatch = textPrompt.match(/Requested Topic \/ Core Subject:\s*"([^"]+)"/i) ||
+                             textPrompt.match(/Requested Topic \/ Core Subject:\s*([^\n\r]+)/i) ||
+                             textPrompt.match(/Main Core Subject \/ Topic:\s*([^\n\r]+)/i) || 
+                             textPrompt.match(/Main Core Subject:\s*([^\n\r]+)/i) || 
+                             textPrompt.match(/Topic:\s*([^\n\r]+)/i);
+        if (subjectMatch && subjectMatch[1]) {
             subject = extractCleanSubject(subjectMatch[1]);
         } else {
             subject = extractCleanSubject(textPrompt);
         }
     }
-    const isBackgroundType = /background|texture|pattern|backdrop|wallpaper|abstract|gradient/i.test(subject);
+
+    if (!subject || subject === "creative visual asset") {
+        subject = "creative visual design";
+    }
+
+    const isBackgroundType = /^(backgrounds?|textures?|patterns?|backdrops?|wallpapers?|abstract|gradients?)$/i.test(subject) ||
+                            Boolean(subject.match(/\b(background|texture|pattern|backdrop|wallpaper|gradient)\b/i));
 
     const bgVariations = [
         "A smooth fluid liquid marble background with vibrant color flow",
