@@ -568,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         resultsList.innerHTML = '';
 
-        const currentModelValue = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+        const currentModelValue = modelSelect ? modelSelect.value : 'gemini-2.0-flash';
 
         // --- Helper: process a single file with a given API key ---
         async function processFile(fileObj, apiKey) {
@@ -687,13 +687,25 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
             if (!parsedResult || !parsedResult.title || !parsedResult.keywords) {
                 fileObj.isFallbackData = true;
                 const nameWithoutExt = fileObj.name.substring(0, fileObj.name.lastIndexOf('.')) || fileObj.name;
-                const cleanTitleWords = nameWithoutExt.replace(/_\d+K|\d{8,}/gi, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-                const formattedTitle = cleanTitleWords ? cleanTitleWords.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : "Creative Digital Graphic Illustration";
+                const cleanTitleWords = nameWithoutExt.replace(/_\d+K|\d{8,}/gi, '').replace(/[-_]+/g, ' ').replace(/[^\w\s]/gi, ' ').replace(/\s+/g, ' ').trim();
+                const formattedTitle = cleanTitleWords ? cleanTitleWords.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : "Creative Digital Asset";
+                
+                let hash = 0;
+                for (let i = 0; i < fileObj.name.length; i++) {
+                    hash = ((hash << 5) - hash) + fileObj.name.charCodeAt(i);
+                    hash |= 0;
+                }
+                const seed = Math.abs(hash);
+
+                const dynamicKeywords = Array.from(new Set([
+                    ...cleanTitleWords.toLowerCase().split(/\s+/).filter(w => w.length > 2),
+                    "stock asset", "digital graphic", "commercial design", "high resolution", "visual element", "creative artwork", "modern illustration", "custom design"
+                ])).join(', ');
                 
                 parsedResult = {
                     title: formattedTitle.length > 150 ? formattedTitle.substring(0, 150) : formattedTitle,
                     description: `High quality stock photo illustration featuring ${formattedTitle.toLowerCase()} in high resolution digital rendering suitable for commercial projects.`,
-                    keywords: "stock photo, digital art, illustration, background, design, graphic, isolated, high quality, concept, modern, wallpaper, creative, element, banner, pattern, texture, symbol, abstract, artistic, backdrop, style, color, bright, vibrant, light, render, 3d, template, presentation, business, marketing, commercial, media, creative art, digital creation, sharp details, high resolution, stock graphic, visual, artwork"
+                    keywords: dynamicKeywords
                 };
             }
 

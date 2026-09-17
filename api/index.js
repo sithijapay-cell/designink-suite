@@ -80,13 +80,12 @@ function parseUserMessagePayload(messages) {
 }
 
 async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature, requestedModel, isJson = true) {
-    // Primary Vision Provider Priority Array (Updated: August 2026)
-    // Note: Google frequently renames/deprecates models (e.g. gemini-2.0-flash returns 404).
-    // Always check https://ai.google.dev/gemini-api/docs/models every few months for exact IDs.
+    // Primary Vision Provider Priority Array (Updated: 2026)
     const models = [
+        "gemini-2.0-flash",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
+        "gemini-3.1-flash-lite",
         "gemini-1.5-flash",
         "gemini-1.5-pro"
     ];
@@ -97,6 +96,11 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
         models.unshift(requestedModel);
     }
     let lastErr = null;
+
+    let cleanBase64 = base64Data || "";
+    if (cleanBase64.includes(";base64,")) {
+        cleanBase64 = cleanBase64.split(";base64,")[1];
+    }
 
     for (const model of models) {
         try {
@@ -116,7 +120,7 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                     contents: [{
                         role: "user",
                         parts: [
-                            ...(base64Data ? [{ inlineData: { mimeType: mimeType || "image/jpeg", data: base64Data } }] : []),
+                            ...(cleanBase64 ? [{ inlineData: { mimeType: mimeType || "image/jpeg", data: cleanBase64 } }] : []),
                             { text: textPrompt }
                         ]
                     }],
@@ -358,10 +362,59 @@ async function callGitHubModels(apiKey, messages, temperature, requestedModel, i
     return { ok: false, error: lastErr, status: 500 };
 }
 
-async function callMoondream(textPrompt, base64Data) {
-    // Moondream public HF endpoint is currently down/deprecated. Disabling cleanly to prevent added latency.
-    console.log("[Moondream] Moondream backup is currently disabled.");
-    return { ok: false, error: "Moondream backup unavailable" };
+async function callPollinationsVision(textPrompt, mimeType, base64Data, isJson = true) {
+    if (!base64Data) {
+        return { ok: false, error: "No image payload for Pollinations Vision API" };
+    }
+    let cleanBase64 = base64Data;
+    if (cleanBase64.includes(";base64,")) {
+        cleanBase64 = cleanBase64.split(";base64,")[1];
+    }
+
+    const models = ["openai", "gemini", "qwen-coder"];
+    for (const model of models) {
+        try {
+            console.log(`[PollinationsVision] Trying free vision model '${model}'...`);
+            const res = await fetch("https://text.pollinations.ai/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                { type: "text", text: textPrompt },
+                                { type: "image_url", image_url: { url: `data:${mimeType || "image/jpeg"};base64,${cleanBase64}` } }
+                            ]
+                        }
+                    ],
+                    model,
+                    jsonMode: isJson
+                })
+            });
+
+            if (res.ok) {
+                let content = await res.text();
+                if (content && content.length > 15) {
+                    if (isJson) {
+                        content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    }
+                    console.log(`[PollinationsVision] SUCCESS on free model '${model}'!`);
+                    return {
+                        ok: true,
+                        data: {
+                            choices: [
+                                { message: { content } }
+                            ]
+                        }
+                    };
+                }
+            }
+        } catch (e) {
+            console.error(`[PollinationsVision Exception] Failed on ${model}: ${e.message}`);
+        }
+    }
+    return { ok: false, error: "Pollinations free vision provider failed" };
 }
 
 function sanitizeTitle(rawTitle, targetMaxLen = 150) {
@@ -389,7 +442,7 @@ function sanitizeTitle(rawTitle, targetMaxLen = 150) {
     return title;
 }
 
-function generateFallbackMetadata(textPrompt) {
+function generateFallbackMetadata(textPrompt, base64Data = "") {
     let filenameHint = "";
     let targetCount = 45;
     if (textPrompt) {
@@ -399,29 +452,66 @@ function generateFallbackMetadata(textPrompt) {
         if (countMatch && countMatch[1]) targetCount = parseInt(countMatch[1], 10);
     }
 
-    const rawName = filenameHint.substring(0, filenameHint.lastIndexOf('.')) || filenameHint || "Stock Photo Illustration";
-    const cleanTitle = rawName
+    const rawName = filenameHint.substring(0, filenameHint.lastIndexOf('.')) || filenameHint || "";
+    const cleanTitleWords = rawName
         .replace(/_\d+K|\d{8,}/gi, '')
         .replace(/[-_]+/g, ' ')
+        .replace(/[^\w\s]/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-    const baseTitle = cleanTitle ? cleanTitle.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "Creative Digital Graphic Illustration";
-    const fullTitle = sanitizeTitle(baseTitle, 150) || "Creative Digital Graphic Illustration";
+    let titleSubject = cleanTitleWords 
+        ? cleanTitleWords.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+        : "Creative Stock Asset";
 
-    const desc = `High quality stock illustration featuring ${baseTitle.toLowerCase()} in high resolution digital rendering suitable for commercial and creative projects.`;
+    let hash = 0;
+    const strForHash = (filenameHint || "image") + (base64Data ? base64Data.substring(0, 120) : "");
+    for (let i = 0; i < strForHash.length; i++) {
+        hash = ((hash << 5) - hash) + strForHash.charCodeAt(i);
+        hash |= 0;
+    }
+    const seed = Math.abs(hash);
+
+    const fullTitle = sanitizeTitle(`${titleSubject} High Resolution Stock Asset`, 150);
+    const desc = `Professional high quality stock graphic featuring ${titleSubject.toLowerCase()} designed for modern commercial, editorial, and digital media projects.`;
+
+    const subjectKeywords = cleanTitleWords.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     
-    const baseWords = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const standardStockTerms = [
-        'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality',
-        'vector', 'concept', 'modern', 'wallpaper', 'creative', 'element', 'banner', 'pattern', 'texture', 'symbol',
-        'abstract', 'artistic', 'backdrop', 'decor', 'decorative', 'style', 'color', 'bright', 'vibrant', 'light',
-        'render', '3d', 'template', 'presentation', 'business', 'marketing', 'commercial', 'media', 'creative art',
-        'digital creation', 'sharp details', 'high resolution', 'stock graphic', 'visual', 'artwork', 'trendy design'
+    const visualStyles = ["digital art", "illustration", "vector graphic", "3d render", "photo illustration", "graphic design", "creative artwork", "modern visual"];
+    const environments = ["isolated background", "minimalist backdrop", "clean composition", "studio shot", "vibrant display", "artistic setting"];
+    const moods = ["modern concept", "creative element", "trendy style", "elegant aesthetic", "dynamic composition", "professional look"];
+    const technicals = ["high resolution", "sharp details", "commercial quality", "custom design", "editable asset", "stock visual"];
+
+    const pick = (arr, offset) => arr[(seed + offset) % arr.length];
+
+    const dynamicSet = new Set([
+        ...subjectKeywords,
+        pick(visualStyles, 0),
+        pick(visualStyles, 1),
+        pick(environments, 2),
+        pick(environments, 3),
+        pick(moods, 4),
+        pick(moods, 5),
+        pick(technicals, 6),
+        pick(technicals, 7),
+        "stock asset",
+        "digital graphic",
+        "commercial media"
+    ]);
+
+    const contextualFillers = [
+        "visual composition", "creative design", "modern artwork", "high quality", "banner element",
+        "presentation asset", "marketing graphic", "digital creation", "decorative element", "artistic render",
+        "concept illustration", "editorial media", "stock photo", "vibrant visual", "clean design", "studio asset"
     ];
 
-    const keywordsSet = new Set([...baseWords, ...standardStockTerms]);
-    const finalKeywordsList = Array.from(keywordsSet).slice(0, Math.max(targetCount, 45)).join(', ');
+    let fillIdx = 0;
+    while (dynamicSet.size < Math.max(targetCount, 35) && fillIdx < contextualFillers.length) {
+        dynamicSet.add(contextualFillers[(seed + fillIdx) % contextualFillers.length]);
+        fillIdx++;
+    }
+
+    const finalKeywordsList = Array.from(dynamicSet).join(', ');
 
     return {
         choices: [
@@ -653,11 +743,22 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    // Hardcoded Fallback generation if no Vision AI call succeeded
-    console.error(`[VisionPipeline Fallback] ALL AI providers failed. Returning fallback. Last error: ${lastErrorMessage || "No keys available"}`);
+    // Try free Pollinations AI Vision provider if keys failed or were missing
+    if (base64Data) {
+        console.log("[VisionPipeline] Attempting free Pollinations AI Vision provider fallback...");
+        const pollinationsRes = await callPollinationsVision(textPrompt, mimeType, base64Data, shouldExpectJson);
+        if (pollinationsRes.ok) {
+            console.log("[VisionPipeline] SUCCESS via Pollinations AI Vision!");
+            return { ok: true, data: pollinationsRes.data, keyId: 'pollinations_free' };
+        }
+        lastErrorMessage = pollinationsRes.error || lastErrorMessage;
+    }
+
+    // Dynamic Seed-Varied Fallback generation if no Vision AI call succeeded
+    console.error(`[VisionPipeline Fallback] ALL Vision AI providers failed. Returning dynamic fallback. Last error: ${lastErrorMessage || "No keys available"}`);
     return {
         ok: true,
-        data: shouldExpectJson ? generateFallbackMetadata(textPrompt) : generateFallbackPrompts(textPrompt),
+        data: shouldExpectJson ? generateFallbackMetadata(textPrompt, base64Data) : generateFallbackPrompts(textPrompt),
         fallback: true,
         isFallback: true,
         errorType: "ALL_PROVIDERS_FAILED",
