@@ -1545,7 +1545,7 @@ STRICT TOPIC & SUBJECT FIDELITY RULES:
                         model: 'llama-3.1-8b-instant',
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `Please provide exactly ${amountToGenerate} prompts now.` }
+                            { role: "user", content: `Please provide exactly ${amountToGenerate} highly creative, distinct prompts strictly about: "${subject}" in ${promptImageType.value} style now.` }
                         ],
                         temperature: 0.8,
                         isJson: false
