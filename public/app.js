@@ -1514,17 +1514,17 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
         while (completed < totalRequested && !isPromptingStopped) {
             let amountToGenerate = Math.min(batchSize, totalRequested - completed);
             
-            const systemPrompt = `You are an expert AI Image Prompt Engineer.
-Create a numbered list of exactly ${amountToGenerate} highly detailed, creative, and distinct text-to-image prompts.
-Image Type/Style: ${promptImageType.value}
-Main Core Subject: ${subject}
-CRITICAL RULES FOR HIGH DIVERSITY:
-- EVERY prompt must be COMPLETELY DIFFERENT in subject position, pose, camera angle, clothing, framing, and composition.
-- Include diverse poses across the prompts (e.g. sitting on stool, standing, walking, holding smartphone, leaning on wall, side profile, cross-legged, medium shot, full-body shot).
-- Do NOT repeat the exact same sentence pattern or suffix across prompts. Make every prompt a unique masterpiece string.
-- Give ONLY the numbered list (e.g. "1. A sharp studio photo of...").
-- NO conversational filler. NO introductory text. NO concluding text.
-- Do NOT provide code blocks or JSON. Just raw text strings of the prompt, separated by new lines.`;
+            const systemPrompt = `You are an elite, world-class AI Image Prompt Engineer specializing in Midjourney v6, DALL-E 3, and Stable Diffusion.
+Create a numbered list of exactly ${amountToGenerate} highly detailed, creative, and distinct text-to-image prompts based EXCLUSIVELY on the user's requested subject and style.
+
+Image Style: ${promptImageType.value}
+Main Core Subject / Topic: ${subject}
+
+STRICT CREATIVE DIRECTIVES FOR HIGH DIVERSITY:
+- Stay 100% faithful to the requested subject: "${subject}". Do NOT force people, human poses, smartphones, or white backgrounds unless specifically requested by the user.
+- For EACH prompt, vary the scene composition, camera angles (wide shot, macro close-up, panoramic, isometric, dramatic low-angle), lighting (golden hour sunrise, neon night glow, cinematic volumetric light, soft diffuse studio light), atmosphere, color grading, background environments, and artistic details.
+- Make every prompt a unique, standalone masterpiece string.
+- Output ONLY the numbered list (e.g. "1. A detailed..."). No introductory text, no conversational filler, no code blocks, no backticks.`;
 
             try {
                 const response = await fetch(PROXY_URL, {
