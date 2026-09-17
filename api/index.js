@@ -439,29 +439,79 @@ function generateFallbackMetadata(textPrompt) {
 }
 
 function generateFallbackPrompts(textPrompt, count = 50) {
-    let subject = "Creative Concept";
+    let subject = "a person";
     if (textPrompt) {
         const match = textPrompt.match(/Main Core Subject:\s*(.*)/i) || textPrompt.match(/subject:\s*(.*)/i);
-        if (match && match[1]) subject = match[1].trim();
+        if (match && match[1]) {
+            let extracted = match[1].trim();
+            if (extracted.length > 3) subject = extracted;
+        }
     }
-    
-    const styles = [
-        "A highly detailed cinematic photograph of",
-        "Vibrant digital art illustration depicting",
-        "A dramatic 3D render of",
-        "An atmospheric masterpiece concept art of",
-        "A sharp studio photograph showing",
-        "A futuristic ultra-detailed depiction of",
-        "An elegant minimalist artwork showcasing",
-        "An epic wide-angle shot of",
-        "A realistic hyper-detailed portrait of",
-        "A beautiful fantasy illustration of"
+
+    const shotTypes = [
+        "A sharp studio photograph of",
+        "A full-body studio portrait featuring",
+        "An eye-level commercial studio shot of",
+        "A medium-shot studio photograph showcasing",
+        "A dramatic wide-angle studio capture of",
+        "A professional high-key studio photo of",
+        "A clean editorial studio portrait of",
+        "A dynamic action studio shot depicting",
+        "A low-angle studio photograph of",
+        "A high-angle studio portrait featuring"
+    ];
+
+    const posesAndActions = [
+        "standing confidently with arms crossed",
+        "sitting comfortably on a minimalist wooden stool",
+        "actively using a smartphone with a focused expression",
+        "walking casually while holding a mobile phone",
+        "leaning casually against a white backdrop looking into the distance",
+        "sitting at a modern glass desk interacting with a touchscreen device",
+        "looking directly into the camera with an engaging smile",
+        "captured in a mid-stride walking pose",
+        "sitting cross-legged on the floor checking a digital tablet",
+        "standing in a relaxed three-quarter profile pose",
+        "holding a smartphone in one hand while making a natural gesture",
+        "sitting in an ergonomic office chair looking thoughtful",
+        "standing tall with hands in pockets",
+        "sitting on the edge of a bench scrolling on a smartphone",
+        "leaning forward with a welcoming expression",
+        "standing in a dynamic power pose",
+        "sitting back in a relaxed posture",
+        "holding a mobile device up as if taking a photo",
+        "standing side-profile while looking over shoulder",
+        "sitting thoughtfully with chin resting on hand"
+    ];
+
+    const attires = [
+        "wearing a sleek white button-down shirt and tailored trousers",
+        "dressed in a minimalist modern beige suit",
+        "wearing a clean casual white t-shirt and dark denim",
+        "dressed in sharp contemporary business casual attire",
+        "wearing an elegant monochrome turtleneck outfit",
+        "dressed in a stylish modern casual blazer",
+        "wearing a minimalist athletic modern outfit",
+        "dressed in a sophisticated smart-casual ensemble"
+    ];
+
+    const lightingAndDetails = [
+        "isolated against a seamless pure white studio background, 8k resolution, professional diffuse softbox lighting, octane render style.",
+        "set against a clean white backdrop, ultra-detailed 8k resolution, cinematic studio lighting with sharp highlights, octane render style.",
+        "on a pristine high-key white studio background, sharp focus, 8k resolution, soft rim lighting, professional photography.",
+        "isolated on a bright seamless white background, crisp 8k details, master studio light setup, octane render style.",
+        "against a minimalist white backdrop, high-resolution 8k photography, professional studio key light, pristine rendering."
     ];
 
     const prompts = [];
     for (let i = 0; i < count; i++) {
-        const style = styles[i % styles.length];
-        prompts.push(`${i + 1}. ${style} ${subject}, 8k resolution, professional lighting, octane render style.`);
+        const shot = shotTypes[i % shotTypes.length];
+        const pose = posesAndActions[i % posesAndActions.length];
+        const attire = attires[i % attires.length];
+        const light = lightingAndDetails[i % lightingAndDetails.length];
+
+        let promptText = `${shot} ${subject} ${pose}, ${attire}, ${light}`;
+        prompts.push(`${i + 1}. ${promptText}`);
     }
 
     return {

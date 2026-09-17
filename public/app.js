@@ -1516,8 +1516,11 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
 Create a numbered list of exactly ${amountToGenerate} highly detailed, creative, and distinct text-to-image prompts.
 Image Type/Style: ${promptImageType.value}
 Main Core Subject: ${subject}
-Rules:
-- Give ONLY the numbered list (e.g. "1. A beautiful...").
+CRITICAL RULES FOR HIGH DIVERSITY:
+- EVERY prompt must be COMPLETELY DIFFERENT in subject position, pose, camera angle, clothing, framing, and composition.
+- Include diverse poses across the prompts (e.g. sitting on stool, standing, walking, holding smartphone, leaning on wall, side profile, cross-legged, medium shot, full-body shot).
+- Do NOT repeat the exact same sentence pattern or suffix across prompts. Make every prompt a unique masterpiece string.
+- Give ONLY the numbered list (e.g. "1. A sharp studio photo of...").
 - NO conversational filler. NO introductory text. NO concluding text.
 - Do NOT provide code blocks or JSON. Just raw text strings of the prompt, separated by new lines.`;
 
