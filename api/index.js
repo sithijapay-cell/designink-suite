@@ -472,7 +472,7 @@ function generateFallbackMetadata(textPrompt, base64Data = "") {
     }
     const seed = Math.abs(hash);
 
-    const fullTitle = sanitizeTitle(`${titleSubject} High Resolution Stock Asset`, 150);
+    const fullTitle = sanitizeTitle(titleSubject, 150) || "Creative Stock Graphic";
     const desc = `Professional high quality stock graphic featuring ${titleSubject.toLowerCase()} designed for modern commercial, editorial, and digital media projects.`;
 
     const subjectKeywords = cleanTitleWords.toLowerCase().split(/\s+/).filter(w => w.length > 2);
