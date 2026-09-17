@@ -1428,7 +1428,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
     
     updatePromptKeyUI();
 
-    const PROXY_URL = 'https://groq-proxy.designink-metadatagen.workers.dev';
+    const PROXY_URL = '/api/groqProxy';
 
     promptCopyAllBtn?.addEventListener('click', () => {
         if (!generatedPromptsArray.length) return;
@@ -1478,11 +1478,6 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                 return;
             }
         }
-        if (!promptApiKey) {
-            promptErrorSection.style.display = 'block';
-            promptErrorSection.innerHTML = "<strong>Error:</strong> Please add your Groq API Key in the 'Prompts' tab first.";
-            return;
-        }
 
         const subject = promptSubject.value.trim();
         if (!subject) {
@@ -1511,7 +1506,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
         promptCopyAllBtn.disabled = true;
         promptDownloadCsvBtn.disabled = true;
 
-        const apiKey = promptApiKey;
+        const apiKey = promptApiKey || 'DesignInk_Internal';
         const batchSize = 50; // max batch to prevent LLM generation token cutoff
         
         while (completed < totalRequested && !isPromptingStopped) {
@@ -1532,12 +1527,13 @@ Rules:
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         apiKey,
-                        model: 'llama-3.3-70b-versatile',
+                        model: 'llama-3.1-8b-instant',
                         messages: [
                             { role: "system", content: systemPrompt },
                             { role: "user", content: `Please provide exactly ${amountToGenerate} prompts now.` }
                         ],
-                        temperature: 0.8
+                        temperature: 0.8,
+                        isJson: false
                     })
                 });
 

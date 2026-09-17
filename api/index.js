@@ -39,17 +39,18 @@ function markKeyCooldown(key, durationMs = 300000) { // default 5 minutes
 }
 
 function parseUserMessagePayload(messages) {
-    let textPrompt = "Generate stock photo metadata in raw JSON object format with title, description, keywords.";
+    let textPrompt = "";
     let mimeType = "image/jpeg";
     let base64Data = "";
 
     try {
         if (Array.isArray(messages)) {
+            const textParts = [];
             for (const msg of messages) {
                 if (Array.isArray(msg.content)) {
                     for (const item of msg.content) {
                         if (item.type === "text" && item.text) {
-                            textPrompt = item.text;
+                            textParts.push(item.text);
                         } else if (item.type === "image_url" && item.image_url?.url) {
                             const dataUrl = item.image_url.url;
                             if (dataUrl.startsWith("data:")) {
@@ -64,16 +65,21 @@ function parseUserMessagePayload(messages) {
                         }
                     }
                 } else if (typeof msg.content === "string") {
-                    textPrompt = msg.content;
+                    textParts.push(msg.content);
                 }
             }
+            textPrompt = textParts.join("\n");
         }
     } catch(e) {}
+
+    if (!textPrompt) {
+        textPrompt = "Generate stock photo metadata in raw JSON object format with title, description, keywords.";
+    }
 
     return { textPrompt, mimeType, base64Data };
 }
 
-async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature, requestedModel) {
+async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temperature, requestedModel, isJson = true) {
     // Primary Vision Provider Priority Array (Updated: August 2026)
     // Note: Google frequently renames/deprecates models (e.g. gemini-2.0-flash returns 404).
     // Always check https://ai.google.dev/gemini-api/docs/models every few months for exact IDs.
@@ -96,6 +102,13 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
         try {
             console.log(`[Gemini] Requesting model ${model}...`);
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const generationConfig = {
+                temperature: temperature ?? 0.4,
+                maxOutputTokens: 2048
+            };
+            if (isJson) {
+                generationConfig.responseMimeType = "application/json";
+            }
             const res = await fetch(url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -107,18 +120,16 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                             { text: textPrompt }
                         ]
                     }],
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                        temperature: temperature ?? 0.4,
-                        maxOutputTokens: 2048
-                    }
+                    generationConfig
                 })
             });
 
             const data = await res.json();
             if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
                 let generatedContent = data.candidates[0].content.parts[0].text;
-                generatedContent = generatedContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+                if (isJson) {
+                    generatedContent = generatedContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+                }
                 console.log(`[Gemini] SUCCESS on model ${model}!`);
                 return {
                     ok: true,
@@ -158,7 +169,7 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
     return { ok: false, error: lastErr, status: 400 };
 }
 
-async function callOpenRouterWithFallback(apiKey, messages, temperature, requestedModel) {
+async function callOpenRouterWithFallback(apiKey, messages, temperature, requestedModel, isJson = true) {
     const freeModels = [
         "google/gemini-2.0-flash-001",
         "google/gemini-2.0-flash-lite-preview-02-05:free",
@@ -181,6 +192,15 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
     for (const model of freeModels) {
         try {
             console.log(`[OpenRouter] Requesting model ${model}...`);
+            const reqBody = {
+                model,
+                messages,
+                temperature: temperature ?? 0.4,
+                max_tokens: 2048
+            };
+            if (isJson) {
+                reqBody.response_format = { type: "json_object" };
+            }
             const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -188,19 +208,15 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
                     "Authorization": `Bearer ${apiKey}`,
                     "HTTP-Referer": "https://designink.ink/"
                 },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    temperature: temperature ?? 0.4,
-                    max_tokens: 2048,
-                    response_format: { type: "json_object" }
-                })
+                body: JSON.stringify(reqBody)
             });
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
                 let content = data.choices[0].message.content;
-                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                if (isJson) {
+                    content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                }
                 data.choices[0].message.content = content;
                 console.log(`[OpenRouter] SUCCESS on model ${model}!`);
                 return { ok: true, data };
@@ -220,16 +236,19 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
     return { ok: false, error: lastErr, status: lastStatus };
 }
 
-async function callGroqWithFallback(apiKey, messages, temperature, requestedModel) {
+async function callGroqWithFallback(apiKey, messages, temperature, requestedModel, isJson = true) {
     const activeGroqModels = [
-        "llama-3.2-11b-vision-instruct",
-        "llama-3.2-90b-vision-preview",
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant"
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
+        "llama-3.2-11b-vision-instruct"
     ];
 
-    if (requestedModel && !activeGroqModels.includes(requestedModel) && !requestedModel.includes('/')) {
+    if (requestedModel && activeGroqModels.includes(requestedModel)) {
+        activeGroqModels.splice(activeGroqModels.indexOf(requestedModel), 1);
         activeGroqModels.unshift(requestedModel);
+    } else if (requestedModel && !activeGroqModels.includes(requestedModel) && !requestedModel.includes('/')) {
+        activeGroqModels.push(requestedModel);
     }
 
     let lastErr = null;
@@ -238,25 +257,30 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
     for (const model of activeGroqModels) {
         try {
             console.log(`[Groq] Requesting model ${model}...`);
+            const reqBody = {
+                model,
+                messages,
+                temperature: temperature ?? 0.4,
+                max_tokens: 2048
+            };
+            if (isJson) {
+                reqBody.response_format = { type: "json_object" };
+            }
             const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${apiKey}`
                 },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    temperature: temperature ?? 0.4,
-                    max_tokens: 2048,
-                    response_format: { type: "json_object" }
-                })
+                body: JSON.stringify(reqBody)
             });
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
                 let content = data.choices[0].message.content;
-                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                if (isJson) {
+                    content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                }
                 data.choices[0].message.content = content;
                 console.log(`[Groq] SUCCESS on model ${model}!`);
                 return { ok: true, data };
@@ -276,7 +300,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
     return { ok: false, error: lastErr, status: lastStatus };
 }
 
-async function callGitHubModels(apiKey, messages, temperature, requestedModel) {
+async function callGitHubModels(apiKey, messages, temperature, requestedModel, isJson = true) {
     const models = [
         "gpt-4o-mini",
         "gpt-4o",
@@ -292,25 +316,30 @@ async function callGitHubModels(apiKey, messages, temperature, requestedModel) {
     for (const model of models) {
         try {
             console.log(`[GitHubModels] Requesting model ${model}...`);
+            const reqBody = {
+                model,
+                messages,
+                temperature: temperature ?? 0.4,
+                max_tokens: 2048
+            };
+            if (isJson) {
+                reqBody.response_format = { type: "json_object" };
+            }
             const res = await fetch("https://models.inference.ai.azure.com/chat/completions", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${apiKey}`
                 },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    temperature: temperature ?? 0.4,
-                    max_tokens: 2048,
-                    response_format: { type: "json_object" }
-                })
+                body: JSON.stringify(reqBody)
             });
 
             const data = await res.json();
             if (res.ok && data.choices?.[0]?.message?.content) {
                 let content = data.choices[0].message.content;
-                content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                if (isJson) {
+                    content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                }
                 data.choices[0].message.content = content;
                 console.log(`[GitHubModels] SUCCESS on model ${model}!`);
                 return { ok: true, data };
@@ -409,10 +438,58 @@ function generateFallbackMetadata(textPrompt) {
     };
 }
 
-async function executeVisionPipeline({ apiKey, model, messages, temperature, textPrompt, mimeType, base64Data }) {
+function generateFallbackPrompts(textPrompt, count = 50) {
+    let subject = "Creative Concept";
+    if (textPrompt) {
+        const match = textPrompt.match(/Main Core Subject:\s*(.*)/i) || textPrompt.match(/subject:\s*(.*)/i);
+        if (match && match[1]) subject = match[1].trim();
+    }
+    
+    const styles = [
+        "A highly detailed cinematic photograph of",
+        "Vibrant digital art illustration depicting",
+        "A dramatic 3D render of",
+        "An atmospheric masterpiece concept art of",
+        "A sharp studio photograph showing",
+        "A futuristic ultra-detailed depiction of",
+        "An elegant minimalist artwork showcasing",
+        "An epic wide-angle shot of",
+        "A realistic hyper-detailed portrait of",
+        "A beautiful fantasy illustration of"
+    ];
+
+    const prompts = [];
+    for (let i = 0; i < count; i++) {
+        const style = styles[i % styles.length];
+        prompts.push(`${i + 1}. ${style} ${subject}, 8k resolution, professional lighting, octane render style.`);
+    }
+
+    return {
+        choices: [
+            {
+                message: {
+                    content: prompts.join('\n')
+                }
+            }
+        ]
+    };
+}
+
+async function executeVisionPipeline({ apiKey, model, messages, temperature, textPrompt, mimeType, base64Data, response_format, isJson }) {
     let keysToTry = [];
 
-    console.log(`[VisionPipeline] Pipeline initialized. User API key provided: ${apiKey ? (apiKey === "DesignInk_Internal" ? "Internal Default" : "User Custom Key (" + apiKey.substring(0, 6) + "...)") : "None"}`);
+    let shouldExpectJson = true;
+    if (typeof isJson === "boolean") {
+        shouldExpectJson = isJson;
+    } else if (response_format && response_format.type === "json_object") {
+        shouldExpectJson = true;
+    } else if (response_format === false || response_format === null) {
+        shouldExpectJson = false;
+    } else if (textPrompt && (textPrompt.includes("Do NOT provide code blocks or JSON") || textPrompt.includes("raw text strings"))) {
+        shouldExpectJson = false;
+    }
+
+    console.log(`[VisionPipeline] Pipeline initialized. User API key provided: ${apiKey ? (apiKey === "DesignInk_Internal" ? "Internal Default" : "User Custom Key (" + apiKey.substring(0, 6) + "...)") : "None"} | Expect JSON: ${shouldExpectJson}`);
 
     // 1. User-provided key from UI (if valid and not cooling down)
     if (apiKey && apiKey !== "DesignInk_Internal" && typeof apiKey === "string" && apiKey.trim().length > 5) {
@@ -476,13 +553,13 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
         let result;
         if (provider === 'gemini') {
-            result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature, model);
+            result = await callNativeGemini(trimmedKey, textPrompt, mimeType, base64Data, temperature, model, shouldExpectJson);
         } else if (provider === 'openrouter') {
-            result = await callOpenRouterWithFallback(trimmedKey, messages, temperature, model);
+            result = await callOpenRouterWithFallback(trimmedKey, messages, temperature, model, shouldExpectJson);
         } else if (provider === 'github') {
-            result = await callGitHubModels(trimmedKey, messages, temperature, model);
+            result = await callGitHubModels(trimmedKey, messages, temperature, model, shouldExpectJson);
         } else {
-            result = await callGroqWithFallback(trimmedKey, messages, temperature, model);
+            result = await callGroqWithFallback(trimmedKey, messages, temperature, model, shouldExpectJson);
         }
 
         if (result.ok) {
@@ -499,20 +576,20 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
     }
 
     // Hardcoded Fallback generation if no Vision AI call succeeded
-    console.error(`[VisionPipeline Fallback] ALL vision providers failed. Returning hardcoded dummy metadata fallback. Last error: ${lastErrorMessage || "No keys available"}`);
+    console.error(`[VisionPipeline Fallback] ALL AI providers failed. Returning fallback. Last error: ${lastErrorMessage || "No keys available"}`);
     return {
         ok: true,
-        data: generateFallbackMetadata(textPrompt),
+        data: shouldExpectJson ? generateFallbackMetadata(textPrompt) : generateFallbackPrompts(textPrompt),
         fallback: true,
         isFallback: true,
         errorType: "ALL_PROVIDERS_FAILED",
-        details: lastErrorMessage || "All vision AI providers failed"
+        details: lastErrorMessage || "All AI providers failed"
     };
 }
 
 const handleGroqProxy = async (req, res) => {
     const payload = req.body?.data || req.body;
-    const { apiKey, model, messages, temperature } = payload || {};
+    const { apiKey, model, messages, temperature, response_format, isJson } = payload || {};
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: "Missing or invalid messages array" });
@@ -527,7 +604,9 @@ const handleGroqProxy = async (req, res) => {
         temperature,
         textPrompt,
         mimeType,
-        base64Data
+        base64Data,
+        response_format,
+        isJson
     });
 
     if (pipelineRes.ok) {
