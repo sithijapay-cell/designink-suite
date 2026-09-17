@@ -154,6 +154,13 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
                 continue;
             }
 
+            // 429 Rate Limit: wait 2s and try next model
+            if (res.status === 429 || errLower.includes("quota") || errLower.includes("rate limit")) {
+                console.warn(`[Gemini Warning] Model '${model}' hit rate limit (HTTP 429). Retrying after 2s delay...`);
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+            }
+
             // 403 Account Suspended / PERMISSION_DENIED: fast-fail key immediately
             if (res.status === 403 || errLower.includes("suspended") || errLower.includes("permission_denied")) {
                 console.error(`[Gemini Error] Key (${apiKey.substring(0, 6)}...) ACCOUNT SUSPENDED / PERMISSION_DENIED (HTTP ${res.status}). Skipping remaining Gemini models immediately.`);
@@ -737,9 +744,11 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
 
         lastErrorMessage = result.error || lastErrorMessage;
 
-        // On Rate Limit (429) or Account Suspension (403), place key on in-memory cooldown
-        if (result.status === 429 || result.status === 403 || result.isAccountSuspended) {
-            markKeyCooldown(trimmedKey, 300000); // 5 minute cooldown
+        // On Rate Limit (429), place key on short 5-second cooldown. On 403/Suspension, place on 5-minute cooldown.
+        if (result.status === 429) {
+            markKeyCooldown(trimmedKey, 5000); // 5 second temporary cooldown
+        } else if (result.status === 403 || result.isAccountSuspended) {
+            markKeyCooldown(trimmedKey, 300000); // 5 minute cooldown for suspended keys
         }
     }
 

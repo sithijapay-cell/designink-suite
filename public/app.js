@@ -751,21 +751,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                 titleWords.forEach(w => combinedSet.add(w));
             }
 
-            const standardStockTerms = [
-                'stock photo', 'digital art', 'illustration', 'background', 'design', 'graphic', 'isolated', 'high quality',
-                'concept', 'modern', 'wallpaper', 'creative', 'element', 'banner', 'pattern', 'texture', 'symbol',
-                'abstract', 'artistic', 'backdrop', 'decor', 'decorative', 'style', 'color', 'bright', 'vibrant', 'light',
-                'render', '3d', 'template', 'presentation', 'business', 'marketing', 'commercial', 'media', 'creative art',
-                'digital creation', 'sharp details', 'high resolution', 'stock graphic', 'visual', 'artwork'
-            ];
-
-            standardStockTerms.forEach(term => {
-                if (combinedSet.size < targetKeywordsCount) {
-                    combinedSet.add(term);
-                }
-            });
-
-            const finalKwList = Array.from(combinedSet).slice(0, Math.max(targetKeywordsCount, 45));
+            const finalKwList = Array.from(combinedSet).slice(0, Math.max(targetKeywordsCount, 30));
 
             parsedResult.keywords = finalKwList.join(', ');
 
@@ -803,7 +789,7 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
                         success = true;
 
                         if (queue.length > 0 && !stopGeneration) {
-                            await new Promise(r => setTimeout(r, 1000));
+                            await new Promise(r => setTimeout(r, 2000));
                         }
                     } catch (err) {
                         console.error(`Attempt ${attempts} failed for ${fileObj.name}:`, err);
