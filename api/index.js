@@ -108,7 +108,7 @@ async function callNativeGemini(apiKey, textPrompt, mimeType, base64Data, temper
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             const generationConfig = {
                 temperature: temperature ?? 0.4,
-                maxOutputTokens: 2048
+                maxOutputTokens: 8192
             };
             if (isJson) {
                 generationConfig.responseMimeType = "application/json";
@@ -207,7 +207,7 @@ async function callOpenRouterWithFallback(apiKey, messages, temperature, request
                 model,
                 messages,
                 temperature: temperature ?? 0.4,
-                max_tokens: 2048
+                max_tokens: 8192
             };
             if (isJson) {
                 reqBody.response_format = { type: "json_object" };
@@ -276,7 +276,7 @@ async function callGroqWithFallback(apiKey, messages, temperature, requestedMode
                 model,
                 messages,
                 temperature: temperature ?? 0.4,
-                max_tokens: 2048
+                max_tokens: 8192
             };
             if (isJson) {
                 reqBody.response_format = { type: "json_object" };
@@ -335,7 +335,7 @@ async function callGitHubModels(apiKey, messages, temperature, requestedModel, i
                 model,
                 messages,
                 temperature: temperature ?? 0.4,
-                max_tokens: 2048
+                max_tokens: 8192
             };
             if (isJson) {
                 reqBody.response_format = { type: "json_object" };

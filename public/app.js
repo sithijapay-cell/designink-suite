@@ -1514,27 +1514,25 @@ Respond ONLY with a valid raw JSON object in this exact format, without markdown
         while (completed < totalRequested && !isPromptingStopped) {
             let amountToGenerate = Math.min(batchSize, totalRequested - completed);
             
-            const systemPrompt = `You are an elite, world-class AI Image Prompt Engineer specializing in Midjourney v6, DALL-E 3, and Stable Diffusion.
-Create a numbered list of exactly ${amountToGenerate} highly detailed, creative, and distinct text-to-image prompts based EXCLUSIVELY on the user's requested subject and style.
+            const systemPrompt = `You are an elite AI Image Prompt Engineer specializing in Midjourney v6, DALL-E 3, and Stable Diffusion.
+Your goal is to deeply analyze the user's topic/instruction and generate a bulk set of ${amountToGenerate} unique, highly creative, and production-ready text-to-image prompts.
 
-Requested Topic / Core Subject: "${subject}"
-Requested Image Style: ${promptImageType.value}
+USER INSTRUCTION / CORE SUBJECT: "${subject}"
+DESIRED VISUAL STYLE: ${promptImageType.value}
 
-STRICT TOPIC & SUBJECT FIDELITY RULES:
-1. PURE SUBJECT ADAPTATION: Every prompt MUST be 100% directly about "${subject}".
-   - If the subject is about "backgrounds" or "textures", generate ONLY pure background, pattern, texture, or backdrop prompts (e.g., fluid marble textures, neon gradient backdrops, geometric paper crafts, dark bokeh lighting). DO NOT include people, animals, or objects unless explicitly requested.
-   - If the subject is about "animals", generate ONLY animal prompts.
-   - If the subject is about "food", generate ONLY food/beverage prompts.
-   - If the subject is about "architecture", generate ONLY building/cityscape prompts.
-   - NEVER insert people, humans, model poses, white studio backdrops, or smartphones unless explicitly requested in "${subject}".
+CRITICAL RULES FOR PROMPT GENERATION:
+1. DEEP THINKING & INSTRUCTION ANALYZATION:
+   - Carefully analyze all aspects of "${subject}" (subject matter, environment, backdrop, action/pose, lighting, and composition).
+   - If the user specifies a specific background (e.g. "in white background"), EVERY single prompt MUST keep that exact background setting while creatively varying the main subjects, species, poses, actions, camera angles, and studio lighting.
+   - If the user specifies animals, people, objects, architecture, or landscapes, generate diverse creative variations strictly featuring those requested elements.
 
-2. MAXIMUM DIVERSITY WITHIN TOPIC:
-   - For EACH prompt, vary the color schemes, lighting setups (golden hour, neon glow, moody darkness, soft daylight), visual textures, mood, camera lenses, and creative sub-concepts of "${subject}".
-   - Make every single line a unique, detailed, professional prompt string.
+2. HIGH CREATIVE DIVERSITY:
+   - Make every numbered prompt distinct and detailed. Vary camera focal length (macro, 35mm, 85mm portrait, wide-angle), color palettes, lighting styles (studio strobe, rim light, golden hour, soft diffuse), and subtle action details.
 
-3. OUTPUT FORMAT:
-   - Provide ONLY a clean numbered list (e.g. "1. A detailed...").
-   - NO introductory text, NO conversational filler, NO code blocks, NO backticks.`;
+3. CLEAN OUTPUT FORMAT:
+   - Output ONLY a clean numbered list from 1 to ${amountToGenerate}.
+   - Format: "1. [Full prompt text]"
+   - Do NOT output any intro, outro, explanations, markdown code blocks, or backticks.`;
 
             try {
                 const response = await fetch(PROXY_URL, {
@@ -1545,7 +1543,7 @@ STRICT TOPIC & SUBJECT FIDELITY RULES:
                         model: 'llama-3.1-8b-instant',
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `Please provide exactly ${amountToGenerate} highly creative, distinct prompts strictly about: "${subject}" in ${promptImageType.value} style now.` }
+                            { role: "user", content: `Analyze the subject "${subject}" carefully and generate exactly ${amountToGenerate} creative, distinct, high-quality prompts in ${promptImageType.value} style following all instructions.` }
                         ],
                         temperature: 0.8,
                         isJson: false
