@@ -428,6 +428,45 @@ async function callPollinationsVision(textPrompt, mimeType, base64Data, isJson =
     return { ok: false, error: "Pollinations free vision provider failed" };
 }
 
+async function callPollinationsText(messages, isJson = false) {
+    const models = ["openai", "mistral", "qwen-coder"];
+    for (const model of models) {
+        try {
+            console.log(`[PollinationsText] Trying free text model '${model}'...`);
+            const res = await fetch("https://text.pollinations.ai/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    messages,
+                    model,
+                    jsonMode: isJson
+                })
+            });
+
+            if (res.ok) {
+                let content = await res.text();
+                if (content && content.length > 20) {
+                    if (isJson) {
+                        content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    }
+                    console.log(`[PollinationsText] SUCCESS on free text model '${model}'!`);
+                    return {
+                        ok: true,
+                        data: {
+                            choices: [
+                                { message: { content } }
+                            ]
+                        }
+                    };
+                }
+            }
+        } catch (e) {
+            console.error(`[PollinationsText Exception] Failed on ${model}: ${e.message}`);
+        }
+    }
+    return { ok: false, error: "Pollinations free text provider failed" };
+}
+
 function sanitizeTitle(rawTitle, targetMaxLen = 150) {
     if (!rawTitle) return "";
 
@@ -554,10 +593,6 @@ function extractCleanSubject(rawSubject) {
         .replace(/Do NOT force people[^\n]*/gi, '')
         .replace(/i want to generate (images|photos|prompts)? (of)?/gi, '')
         .replace(/generate (images|photos|prompts)? (of)?/gi, '')
-        .replace(/every prompt must be (defferent|different)/gi, '')
-        .replace(/in (defferent|different) (angles|positions|poses)/gi, '')
-        .replace(/one image include/gi, '')
-        .replace(/like images/gi, '')
         .replace(/8k resolution|professional lighting|octane render style/gi, '')
         .replace(/[\s,-]+/g, ' ')
         .trim();
@@ -591,8 +626,11 @@ function generateFallbackPrompts(textPrompt, count = 50) {
         subject = "creative visual design";
     }
 
-    const isBackgroundType = /^(backgrounds?|textures?|patterns?|backdrops?|wallpapers?|abstract|gradients?)$/i.test(subject) ||
-                            Boolean(subject.match(/\b(background|texture|pattern|backdrop|wallpaper|gradient)\b/i));
+    const cleanSubjectLower = subject.trim().toLowerCase();
+    const isPureBackground = /^(backgrounds?|textures?|patterns?|backdrops?|wallpapers?|abstract|gradients?)$/i.test(cleanSubjectLower) ||
+                            cleanSubjectLower === "liquid marble background" ||
+                            cleanSubjectLower === "paper craft backdrop" ||
+                            cleanSubjectLower === "neon grid texture";
 
     const bgVariations = [
         "A smooth fluid liquid marble background with vibrant color flow",
@@ -607,22 +645,27 @@ function generateFallbackPrompts(textPrompt, count = 50) {
         "A rich moody dark wooden board texture with natural grain"
     ];
 
-    const compositions = isBackgroundType ? bgVariations : [
-        `A detailed wide-angle shot of ${subject}`,
-        `A crisp, high-resolution close-up capture featuring ${subject}`,
-        `An eye-level cinematic shot showcasing ${subject}`,
-        `A dramatic low-angle perspective of ${subject}`,
-        `A beautiful isometric view depicting ${subject}`,
-        `A panoramic, immersive scene of ${subject}`,
-        `A vibrant, highly detailed render of ${subject}`,
-        `A clean, minimal composition featuring ${subject}`,
-        `A dynamic macro shot emphasizing details of ${subject}`,
-        `A masterfully framed artistic depiction of ${subject}`
+    const compositions = isPureBackground ? bgVariations : [
+        `A detailed high-resolution photograph of ${subject}`,
+        `A crisp close-up shot featuring ${subject}`,
+        `An eye-level cinematic capture depicting ${subject}`,
+        `A dramatic low-angle perspective showing ${subject}`,
+        `A beautiful studio presentation featuring ${subject}`,
+        `A panoramic wide-angle composition showcasing ${subject}`,
+        `A vibrant, highly detailed render depicting ${subject}`,
+        `A clean minimalist framing centered on ${subject}`,
+        `A dynamic macro shot capturing fine details of ${subject}`,
+        `A masterfully composed artistic visual featuring ${subject}`,
+        `A studio-lit professional shot featuring ${subject}`,
+        `A cinematic action perspective of ${subject}`,
+        `A soft daylight capture highlighting ${subject}`,
+        `An elegant high-fashion style visual depicting ${subject}`,
+        `A dramatic volumetric lighting capture of ${subject}`
     ];
 
     const environments = [
         "with rich color depth and vibrant contrast",
-        "highlighting striking geometric balance and subtle details",
+        "highlighting striking visual balance and subtle details",
         "featuring elegant atmospheric depth and soft gradients",
         "with crisp high-definition resolution and fine textures",
         "bathed in cinematic lighting with subtle specular highlights"
@@ -638,7 +681,7 @@ function generateFallbackPrompts(textPrompt, count = 50) {
 
     const prompts = [];
     for (let i = 0; i < count; i++) {
-        const comp = isBackgroundType 
+        const comp = isPureBackground 
             ? `${compositions[i % compositions.length]}, variation ${i + 1}`
             : compositions[i % compositions.length];
         const env = environments[(i * 3) % environments.length];
@@ -761,13 +804,21 @@ async function executeVisionPipeline({ apiKey, model, messages, temperature, tex
         }
     }
 
-    // Try free Pollinations AI Vision provider if keys failed or were missing
+    // Try free Pollinations AI Vision/Text provider if keys failed or were missing
     if (base64Data) {
         console.log("[VisionPipeline] Attempting free Pollinations AI Vision provider fallback...");
         const pollinationsRes = await callPollinationsVision(textPrompt, mimeType, base64Data, shouldExpectJson);
         if (pollinationsRes.ok) {
             console.log("[VisionPipeline] SUCCESS via Pollinations AI Vision!");
             return { ok: true, data: pollinationsRes.data, keyId: 'pollinations_free' };
+        }
+        lastErrorMessage = pollinationsRes.error || lastErrorMessage;
+    } else if (messages && messages.length > 0) {
+        console.log("[VisionPipeline] Attempting free Pollinations AI Text provider fallback...");
+        const pollinationsRes = await callPollinationsText(messages, shouldExpectJson);
+        if (pollinationsRes.ok) {
+            console.log("[VisionPipeline] SUCCESS via Pollinations AI Text!");
+            return { ok: true, data: pollinationsRes.data, keyId: 'pollinations_free_text' };
         }
         lastErrorMessage = pollinationsRes.error || lastErrorMessage;
     }
